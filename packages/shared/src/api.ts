@@ -7,6 +7,7 @@
 import { z } from 'zod';
 import { EVENT_TYPES } from './events.js';
 import { isEventCell } from './geo.js';
+import { powSolutionSchema } from './pow.js';
 
 export const API_PREFIX = '/api';
 
@@ -39,7 +40,7 @@ export const voteSchema = z.object({
 });
 export type VoteBody = z.infer<typeof voteSchema>;
 
-export const registerOptionsSchema = z.object({ pseudo: pseudoSchema });
+export const registerOptionsSchema = z.object({ pseudo: pseudoSchema, pow: powSolutionSchema });
 export const updatePseudoSchema = z.object({ pseudo: pseudoSchema });
 
 /** Représentation publique d'un signalement. Aucune donnée sur l'auteur ni les votants. */
@@ -99,6 +100,8 @@ export interface AdminOverview {
   accounts: number;
   suspended: number;
   lowReliability: number;
+  /** Zones recevant un nombre inhabituel de NOUVEAUX signalements (fenêtre de 5 min). */
+  surges: { zone: string; newEvents: number }[];
 }
 
 export interface AdminEventsResponse {

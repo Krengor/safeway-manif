@@ -10,6 +10,8 @@
  */
 import {
   EVENT_META,
+  PROBATION_DAYS,
+  PROBATION_WEIGHT,
   REPUTATION_NEUTRAL,
   extendedExpiry,
   shouldWithdraw,
@@ -107,10 +109,16 @@ export class EventService {
     return Boolean(row);
   }
 
-  /** Réputation interne d'un compte (jamais exposée). */
-  async reputationOf(userId: string): Promise<number> {
-    const [user] = await this.sql<{ reputation_score: number }[]>`SELECT reputation_score FROM users WHERE id = ${userId}`;
-    return user?.reputation_score ?? REPUTATION_NEUTRAL;
+  /** Réputation interne d'un compte (jamais exposée) et période probatoire. */
+  async standingOf(userId: string): Promise<{ reputation: number; probation: boolean }> {
+    return this.standing(this.sql, userId);
+  }
+
+  private async standing(db: Sql | Tx, userId: string): Promise<{ reputation: number; probation: boolean }> {
+    const [user] = await db<{ reputation_score: number; probation: boolean }[]>`
+      SELECT reputation_score, created_at >= current_date - ${PROBATION_DAYS}::int AS probation
+      FROM users WHERE id = ${userId}`;
+    return { reputation: user?.reputation_score ?? REPUTATION_NEUTRAL, probation: user?.probation ?? false };
   }
 
   /** Cellule d'un événement actif (pour la vérification de proximité avant un vote). */
@@ -173,10 +181,10 @@ export class EventService {
     return result.event;
   }
 
-  /** Poids d'un votant = sa réputation courante (1 par défaut). */
+  /** Poids d'un votant = sa réputation courante, plafonnée pendant la période probatoire. */
   private async weightOf(tx: Tx, userId: string): Promise<number> {
-    const [user] = await tx<{ reputation_score: number }[]>`SELECT reputation_score FROM users WHERE id = ${userId}`;
-    return user?.reputation_score ?? REPUTATION_NEUTRAL;
+    const { reputation, probation } = await this.standing(tx, userId);
+    return probation ? Math.min(reputation, PROBATION_WEIGHT) : reputation;
   }
 
   private async applyVote(tx: Tx, row: EventRow, userId: string, vote: Vote, weight: number): Promise<PublicEvent | null> {

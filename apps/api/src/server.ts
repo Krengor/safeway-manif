@@ -1,5 +1,6 @@
 import cookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import { API_PREFIX, CSRF_HEADER } from '@safeway/shared';
 import Fastify, {
   type FastifyError,
@@ -11,8 +12,10 @@ import { randomUUID } from 'node:crypto';
 import type { Config } from './config.js';
 import type { Sql } from './db.js';
 import { RedisBus } from './lib/bus.js';
+import { rateKey } from './lib/crypto.js';
 import { HttpError } from './lib/http.js';
 import { RateLimiter } from './lib/rateLimit.js';
+import { SurgeDetector } from './lib/surge.js';
 import { SESSION_TTL_SECONDS, SessionStore } from './lib/sessions.js';
 import type { Redis } from './redis.js';
 import { authRoutes } from './routes/auth.js';
@@ -32,6 +35,7 @@ export interface AppContext {
   limiter: RateLimiter;
   events: EventService;
   reputation: ReputationService;
+  surge: SurgeDetector;
   sessionCookie: string;
   sessionTtl: number;
   cookieOptions: CookieSerializeOptions;
@@ -84,6 +88,7 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
       links: reputationLinks,
     }),
     reputation: new ReputationService(sql, reputationLinks, redis),
+    surge: new SurgeDetector(redis),
     sessionCookie,
     sessionTtl: SESSION_TTL_SECONDS,
     cookieOptions,
@@ -103,6 +108,17 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
     crossOriginResourcePolicy: { policy: 'same-origin' },
     referrerPolicy: { policy: 'no-referrer' },
     hsts: isProd ? { maxAge: 63072000, includeSubDomains: true, preload: true } : false,
+  });
+
+  // Plafonds par IP déclarés route par route (`config.rateLimit`), rien de global : derrière
+  // un NAT opérateur, des milliers de manifestants peuvent partager quelques adresses.
+  // Compteurs dans Redis, sous une clé HMAC : aucune IP en clair (§18).
+  await app.register(rateLimit, {
+    global: false,
+    redis,
+    nameSpace: 'rl:route:',
+    keyGenerator: (request) => rateKey(config.RATE_LIMIT_SECRET, `ip:${request.ip}`),
+    errorResponseBuilder: () => new HttpError(429, 'rate_limited', 'Trop de requêtes, réessayez dans quelques minutes.'),
   });
 
   // Défense CSRF (§35) : SameSite=Strict + en-tête personnalisé + vérification d'origine.

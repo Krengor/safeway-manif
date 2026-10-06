@@ -1,4 +1,4 @@
-import { createEventSchema, isNear, voteSchema, type PublicEvent, type VoteResponse } from '@safeway/shared';
+import { createEventSchema, isNear, voteSchema, zoneOf, type PublicEvent, type VoteResponse } from '@safeway/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError, parse } from '../lib/http.js';
@@ -30,12 +30,13 @@ export async function eventRoutes(app: FastifyInstance, ctx: AppContext): Promis
     } else {
       await limiter.consume(RATE_RULES.reportBurst, subject);
       await limiter.consume(RATE_RULES.report, subject);
-      if ((await events.reputationOf(userId)) < LOW_REPUTATION_THRESHOLD) {
-        await limiter.consume(RATE_RULES.reportLowReputation, subject);
-      }
+      const { reputation, probation } = await events.standingOf(userId);
+      if (reputation < LOW_REPUTATION_THRESHOLD) await limiter.consume(RATE_RULES.reportLowReputation, subject);
+      if (probation) await limiter.consume(RATE_RULES.reportProbation, subject);
     }
 
     const result = await events.report(userId, body.type, body.cell);
+    if (result.created) ctx.surge.record(zoneOf(body.cell));
     reply.code(result.created ? 201 : 200);
     return result;
   });

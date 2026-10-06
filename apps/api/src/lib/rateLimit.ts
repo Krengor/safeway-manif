@@ -28,6 +28,8 @@ export const RATE_RULES = {
   report: { name: 'report', limit: 5, windowSeconds: 600, message: TOO_FAST },
   /** Compte dont les signalements ont souvent été invalidés : quota réduit. */
   reportLowReputation: { name: 'report-low', limit: 2, windowSeconds: 600, message: TOO_FAST },
+  /** Compte créé aujourd'hui ou hier (période probatoire). */
+  reportProbation: { name: 'report-new', limit: 3, windowSeconds: 600, message: TOO_FAST },
   vote: { name: 'vote', limit: 60, windowSeconds: 600 },
   admin: { name: 'admin', limit: 120, windowSeconds: 60 },
   read: { name: 'read', limit: 600, windowSeconds: 60 },

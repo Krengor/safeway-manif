@@ -93,6 +93,22 @@ export function ModerationScreen({ onClose }: Props) {
         </section>
       )}
 
+      {overview && overview.surges.length > 0 && (
+        <section role="alert" className="rounded-xl border-2 border-warn p-3">
+          <h2 className="mb-1 text-lg font-bold">⚡ Pics inhabituels de nouveaux signalements</h2>
+          <p className="mb-2 text-sm text-muted">
+            Peut être une vraie dispersion… ou une tentative de saturer la carte. À vérifier dans la liste ci-dessous.
+          </p>
+          <ul className="flex flex-col gap-1">
+            {overview.surges.map((s) => (
+              <li key={s.zone} className="font-semibold">
+                Zone {s.zone.slice(0, 8)}… : {s.newEvents} nouveaux signalements en 5 min
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {overview && Object.keys(overview.byType).length > 0 && (
         <section>
           <h2 className="mb-2 text-lg font-bold">Par type</h2>

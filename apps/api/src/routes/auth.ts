@@ -11,11 +11,12 @@ import {
   type AuthenticatorTransportFuture,
   type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
-import { registerOptionsSchema } from '@safeway/shared';
+import { registerOptionsSchema, type PowChallenge } from '@safeway/shared';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomToken } from '../lib/crypto.js';
 import { HttpError, parse } from '../lib/http.js';
+import { ProofOfWork } from '../lib/pow.js';
 import { RATE_RULES } from '../lib/rateLimit.js';
 import type { AppContext } from '../server.js';
 
@@ -37,9 +38,13 @@ function uuidToBytes(uuid: string): Uint8Array<ArrayBuffer> {
 }
 
 export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
-  const { config, sql, redis, sessions, limiter } = ctx;
+  const { config, sql, redis, sessions } = ctx;
   const expectedOrigin = config.PUBLIC_ORIGIN;
   const rpID = config.WEBAUTHN_RP_ID;
+  /** Plafond par IP (plugin @fastify/rate-limit, clé HMAC dans Redis). */
+  const limited = {
+    config: { rateLimit: { max: RATE_RULES.auth.limit, timeWindow: RATE_RULES.auth.windowSeconds * 1000 } },
+  };
 
   async function storeChallenge(reply: FastifyReply, kind: 'reg' | 'auth', payload: object): Promise<void> {
     const id = randomToken(16);
@@ -64,12 +69,20 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
 
   // --- Inscription -----------------------------------------------------------------
 
-  app.post('/auth/passkey/register/options', async (request, reply) => {
-    await limiter.consume(RATE_RULES.auth, `ip:${request.ip}`);
-    const { pseudo } = parse(registerOptionsSchema, request.body);
+  const pow = new ProofOfWork(redis);
+
+  /** Défi de preuve de travail, à résoudre avant de demander les options d'inscription. */
+  app.get('/auth/pow', limited, async (): Promise<PowChallenge> => {
+    return pow.issue();
+  });
+
+  app.post('/auth/passkey/register/options', limited, async (request, reply) => {
+    const { pseudo, pow: solution } = parse(registerOptionsSchema, request.body);
 
     const [taken] = await sql`SELECT 1 FROM users WHERE lower(pseudo) = lower(${pseudo})`;
     if (taken) throw new HttpError(409, 'pseudo_taken', 'Ce pseudo est déjà pris.');
+    // Anti-création massive de comptes (§20), sans IP ni CAPTCHA : preuve de travail.
+    await pow.verify(solution);
 
     const userId = randomUUID();
     const options = await generateRegistrationOptions({
@@ -86,8 +99,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
     return options;
   });
 
-  app.post('/auth/passkey/register/verify', async (request, reply) => {
-    await limiter.consume(RATE_RULES.auth, `ip:${request.ip}`);
+  app.post('/auth/passkey/register/verify', limited, async (request, reply) => {
     const pending = await takeChallenge<PendingRegistration>(request, reply, 'reg');
 
     let verification;
@@ -118,14 +130,14 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       throw err;
     }
 
+    await pow.recordRegistration().catch(() => {});
     await openSession(reply, pending.userId);
     return { pseudo: pending.pseudo };
   });
 
   // --- Connexion (passkey découvrable : pas besoin de saisir le pseudo) -------------
 
-  app.post('/auth/passkey/login/options', async (request, reply) => {
-    await limiter.consume(RATE_RULES.auth, `ip:${request.ip}`);
+  app.post('/auth/passkey/login/options', limited, async (request, reply) => {
     const options = await generateAuthenticationOptions({
       rpID,
       userVerification: 'preferred',
@@ -135,8 +147,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
     return options;
   });
 
-  app.post('/auth/passkey/login/verify', async (request, reply) => {
-    await limiter.consume(RATE_RULES.auth, `ip:${request.ip}`);
+  app.post('/auth/passkey/login/verify', limited, async (request, reply) => {
     const pending = await takeChallenge<PendingAuthentication>(request, reply, 'auth');
     const body = request.body as AuthenticationResponseJSON;
     if (typeof body?.id !== 'string' || body.id.length > 1024) throw new HttpError(400, 'passkey_invalid');

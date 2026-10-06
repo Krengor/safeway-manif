@@ -1,7 +1,15 @@
-import { CSRF_HEADER, toEventCell, zoneChannel, zoneOf, type PublicEvent } from '@safeway/shared';
+import {
+  CSRF_HEADER,
+  leadingZeroBits,
+  powMessage,
+  toEventCell,
+  zoneChannel,
+  zoneOf,
+  type PublicEvent,
+} from '@safeway/shared';
 import type { FastifyInstance } from 'fastify';
 import { gridDisk } from 'h3-js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import { createDb, type Sql } from '../src/db.js';
@@ -22,10 +30,21 @@ let sql: Sql;
 let redis: Redis;
 let sessions: SessionStore;
 
-async function newUser(pseudo = `t_${randomUUID().slice(0, 8)}`) {
-  const [user] = await sql<{ id: string }[]>`INSERT INTO users (pseudo) VALUES (${pseudo}) RETURNING id`;
+/** Compte de test ; par défaut ancien d'une semaine (hors période probatoire). */
+async function newUser(pseudo = `t_${randomUUID().slice(0, 8)}`, { fresh = false } = {}) {
+  const [user] = await sql<{ id: string }[]>`
+    INSERT INTO users (pseudo, created_at) VALUES (${pseudo}, current_date - ${fresh ? 0 : 7}::int) RETURNING id`;
   const token = await sessions.create(user!.id);
   return { id: user!.id, pseudo, cookie: `sw_session=${token}` };
+}
+
+/** Résout un défi de preuve de travail (comme le ferait le navigateur). */
+async function solvePow() {
+  const { challenge, difficulty } = (await app.inject({ method: 'GET', url: '/api/auth/pow' })).json();
+  for (let nonce = 0; ; nonce++) {
+    const hash = createHash('sha256').update(powMessage(challenge, String(nonce))).digest();
+    if (leadingZeroBits(hash) >= difficulty) return { challenge, nonce: String(nonce), difficulty };
+  }
 }
 
 function post(url: string, cookie: string | null, payload: unknown) {
@@ -271,6 +290,18 @@ describe('temps réel', () => {
 });
 
 describe('anti-spam par compte', () => {
+  it("plafonne l'authentification par IP, sans IP en clair dans Redis", async () => {
+    const codes: number[] = [];
+    for (let i = 0; i < 31; i++) codes.push((await app.inject({ method: 'GET', url: '/api/auth/pow' })).statusCode);
+    expect(codes.slice(0, 30).every((c) => c === 200)).toBe(true);
+    const blocked = await app.inject({ method: 'GET', url: '/api/auth/pow' });
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json().error).toBe('rate_limited');
+    const keys = await redis.keys('rl:route:*');
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.join()).not.toContain('127.0.0.1');
+  });
+
   it('refuse un second nouveau signalement immédiat du même compte', async () => {
     const user = await newUser();
     const first = await post('/api/events', user.cookie, { type: 'FOULE_DENSE', cell: HERE, presenceCell: HERE });
@@ -399,6 +430,71 @@ describe('réputation', () => {
   });
 });
 
+describe('anti-abus avancé', () => {
+  const options = (pow: unknown) => post('/api/auth/passkey/register/options', null, { pseudo: `t_${randomUUID().slice(0, 8)}`, pow });
+
+  it("exige une preuve de travail valide et à usage unique pour s'inscrire", async () => {
+    expect((await options(undefined)).statusCode).toBe(400);
+    const { challenge, nonce } = await solvePow();
+    // Mauvais nonce : la vérification consomme le défi.
+    const wrong = await options({ challenge, nonce: String(Number(nonce) + 1) });
+    expect([400]).toContain(wrong.statusCode);
+    const solved = await solvePow();
+    expect((await options({ challenge: solved.challenge, nonce: solved.nonce })).statusCode).toBe(200);
+    // Rejouer le même défi est refusé.
+    expect((await options({ challenge: solved.challenge, nonce: solved.nonce })).json().error).toBe('pow_expired');
+  });
+
+  it("durcit la preuve de travail quand les inscriptions s'emballent", async () => {
+    const key = `reg:count:${Math.floor(Date.now() / 1000 / 600)}`;
+    const base = (await app.inject({ method: 'GET', url: '/api/auth/pow' })).json().difficulty;
+    await redis.set(key, '300', 'EX', 60);
+    try {
+      expect((await app.inject({ method: 'GET', url: '/api/auth/pow' })).json().difficulty).toBeGreaterThan(base);
+    } finally {
+      await redis.del(key);
+    }
+  });
+
+  it('plafonne le poids des votes des comptes en période probatoire', async () => {
+    const author = await newUser();
+    const fresh = await newUser(undefined, { fresh: true });
+    await sql`UPDATE users SET reputation_score = 2 WHERE id = ${fresh.id}`;
+    const event = (await post('/api/events', author.cookie, { type: 'GAZ_FUMEE', cell: HERE, presenceCell: HERE })).json().event;
+    const res = await post(`/api/events/${event.id}/confirm`, fresh.cookie, { presenceCell: HERE });
+    expect(res.json().event.supportW).toBe(1.5); // 1 (auteur) + 0,5 (plafond probatoire)
+  });
+
+  it('réduit le quota de nouveaux signalements en période probatoire', async () => {
+    const fresh = await newUser(undefined, { fresh: true });
+    const cells = gridDisk(HERE, 2);
+    const types = ['FOULE_DENSE', 'GAZ_FUMEE', 'DEBRIS', 'INCENDIE'] as const;
+    const codes: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      await redis.del(...(await redis.keys('rl:report-burst:*'))).catch(() => {});
+      codes.push((await post('/api/events', fresh.cookie, { type: types[i], cell: cells[i + 1], presenceCell: HERE })).statusCode);
+    }
+    expect(codes).toEqual([201, 201, 201, 429]);
+  });
+
+  it('compte les nouveaux signalements par zone et signale les pics à la modération', async () => {
+    const zone = zoneOf(HERE);
+    const surgeKey = `surge:${Math.floor(Date.now() / 1000 / 300)}`;
+    await redis.zrem(surgeKey, zone);
+    const user = await newUser();
+    await post('/api/events', user.cookie, { type: 'FOULE_DENSE', cell: HERE, presenceCell: HERE });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(Number(await redis.zscore(surgeKey, zone))).toBe(1);
+
+    await redis.zincrby(surgeKey, 20, zone); // simule un pic
+    const admin = await newUser();
+    await sql`UPDATE users SET role = 'admin' WHERE id = ${admin.id}`;
+    const overview = (await app.inject({ method: 'GET', url: '/api/admin/overview', headers: { cookie: admin.cookie } })).json();
+    expect(overview.surges).toContainEqual({ zone, newEvents: 21 });
+    await redis.zrem(surgeKey, zone);
+  });
+});
+
 describe('modération', () => {
   async function newAdmin() {
     const admin = await newUser();
@@ -508,12 +604,14 @@ describe('compte', () => {
 
   it('refuse un pseudo déjà pris (insensible à la casse)', async () => {
     await newUser('t_Taken');
-    const res = await post('/api/auth/passkey/register/options', null, { pseudo: 'T_TAKEN' });
+    const { challenge, nonce } = await solvePow();
+    const res = await post('/api/auth/passkey/register/options', null, { pseudo: 'T_TAKEN', pow: { challenge, nonce } });
     expect(res.statusCode).toBe(409);
   });
 
   it('fournit des options WebAuthn sans attestation', async () => {
-    const res = await post('/api/auth/passkey/register/options', null, { pseudo: 't_newcomer' });
+    const { challenge, nonce } = await solvePow();
+    const res = await post('/api/auth/passkey/register/options', null, { pseudo: 't_newcomer', pow: { challenge, nonce } });
     expect(res.statusCode).toBe(200);
     expect(res.json().attestation).toBe('none');
     expect(res.json().authenticatorSelection.residentKey).toBe('required');

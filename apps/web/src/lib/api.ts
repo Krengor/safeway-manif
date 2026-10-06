@@ -5,6 +5,8 @@ import {
   type AdminAccountsResponse,
   type AdminEventsResponse,
   type AdminOverview,
+  type PowChallenge,
+  type PowSolution,
   type RouteResponse,
   type ApiError,
   type CreateEventBody,
@@ -69,7 +71,9 @@ export const api = {
   deleteAccount: () => request<void>('DELETE', '/me'),
   logout: () => request<void>('POST', '/auth/logout'),
 
-  registerOptions: (pseudo: string) => request<unknown>('POST', '/auth/passkey/register/options', { pseudo }),
+  powChallenge: () => request<PowChallenge>('GET', '/auth/pow'),
+  registerOptions: (pseudo: string, pow: PowSolution) =>
+    request<unknown>('POST', '/auth/passkey/register/options', { pseudo, pow }),
   registerVerify: (response: unknown) => request<MeResponse>('POST', '/auth/passkey/register/verify', response),
   loginOptions: () => request<unknown>('POST', '/auth/passkey/login/options', {}),
   loginVerify: (response: unknown) => request<MeResponse>('POST', '/auth/passkey/login/verify', response),
