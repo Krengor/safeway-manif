@@ -76,3 +76,9 @@ Aucune mention « supporte 500 000 utilisateurs » ne sera faite sans rapport de
 ## Contribuer / sécurité
 
 [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
+## Licence
+
+[GNU AGPL-3.0-or-later](LICENSE). Toute instance publique d'une version modifiée doit publier son code source
+à ses utilisateurs — une garantie de plus que personne ne peut faire tourner en secret une version qui collecte
+davantage de données.

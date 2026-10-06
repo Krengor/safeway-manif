@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Navigation collaborative de sécurité piétonne pendant les manifestations — anonyme, éphémère, sans historique de déplacement.",
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "engines": {
     "node": ">=22"

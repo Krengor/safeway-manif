@@ -40,3 +40,6 @@ Thumbs.db
 
 # Outils locaux
 .claude/
+
+# Documents de travail privés (hors dépôt public)
+SAFEWAY_MANIF_CAHIER_DES_CHARGES*.md

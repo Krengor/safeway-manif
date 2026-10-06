@@ -1,3 +1,6 @@
+/** Accès au code source exigé par l'AGPL-3.0 (§13) pour les utilisateurs réseau. */
+const SOURCE_URL = 'https://github.com/Krengor/safeway-manif';
+
 interface Props {
   onClose(): void;
 }
@@ -50,7 +53,11 @@ export function PrivacyScreen({ onClose }: Props) {
       </section>
 
       <p className="text-sm text-muted">
-        Le code source est public et auditable. Vous pouvez supprimer votre compte à tout moment depuis l'écran Compte.
+        Le code source est public et auditable (licence AGPL-3.0) :{' '}
+        <a href={SOURCE_URL} target="_blank" rel="noreferrer noopener" className="font-semibold underline">
+          code source
+        </a>
+        . Vous pouvez supprimer votre compte à tout moment depuis l'écran Compte.
       </p>
     </main>
   );
