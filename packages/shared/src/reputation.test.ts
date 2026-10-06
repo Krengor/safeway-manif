@@ -34,6 +34,14 @@ describe('confiance pondérée', () => {
   });
 });
 
+describe('signalements non vérifiés', () => {
+  it("ne colorent jamais une zone en rouge ni en vert, seulement en orange", async () => {
+    const { computeZoneStatus } = await import('./confidence.js');
+    expect(computeZoneStatus([ev({ conf: 9, unverified: true })], NOW)).toBe('orange');
+    expect(computeZoneStatus([ev({ type: 'PASSAGE_LIBRE', conf: 9, unverified: true })], NOW)).toBe('orange');
+  });
+});
+
 describe('bilan et réputation', () => {
   it('classe le bilan des signalements', () => {
     expect(eventOutcome({ conf: 3, inv: 0 })).toBe('confirmed');

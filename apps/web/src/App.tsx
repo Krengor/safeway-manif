@@ -7,6 +7,8 @@ import { RoutePanel } from './components/RoutePanel';
 import { api, ApiRequestError } from './lib/api';
 import { useManifMode } from './lib/useManifMode';
 import { useOnline, useOutbox } from './lib/useOutbox';
+import { SHARE_FRAGMENT_PREFIX, loadSigningKey, readSharePacket } from './lib/offlineShare';
+import { OfflineShareSheet } from './components/OfflineShareSheet';
 import { useTrip } from './lib/useTrip';
 import { useZoneEvents } from './lib/useZoneEvents';
 import { MapView, type MapViewHandle } from './map/MapView';
@@ -63,6 +65,9 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [degradedDismissedAt, setDegradedDismissedAt] = useState(0);
 
   const zoneData = useZoneEvents(zones ?? []);
   const now = Math.floor(tick / 1000) + zoneData.clockSkew;
@@ -84,6 +89,34 @@ export function App() {
       },
       () => setPseudo(null),
     );
+  }, []);
+
+  // Partage hors réseau reçu (QR scanné / lien partagé) : import + vérification des signatures.
+  // Au passage, la clé publique du serveur est mise en cache pour les réceptions hors ligne.
+  useEffect(() => {
+    const hash = window.location.hash;
+    const packet = hash.startsWith(SHARE_FRAGMENT_PREFIX) ? hash.slice(SHARE_FRAGMENT_PREFIX.length) : null;
+    void (async () => {
+      const key = await loadSigningKey().catch(() => null);
+      if (!packet) return;
+      history.replaceState(null, '', window.location.pathname); // le paquet ne reste pas dans l'historique
+      try {
+        const received = await readSharePacket(packet, key, Math.floor(Date.now() / 1000));
+        zoneData.importShared([...received.verified, ...received.unverified]);
+        const total = received.verified.length + received.unverified.length;
+        setToast(
+          total === 0
+            ? 'Partage reçu : aucun signalement encore valable.'
+            : `📡 ${total} signalement${total > 1 ? 's' : ''} reçu${total > 1 ? 's' : ''} hors réseau` +
+                (received.unverified.length ? ` (${received.unverified.length} non vérifié${received.unverified.length > 1 ? 's' : ''})` : '') +
+                (received.rejected ? ` · ${received.rejected} écarté${received.rejected > 1 ? 's' : ''} (signature invalide)` : '') +
+                '.',
+        );
+      } catch {
+        setToast('Partage reçu illisible.');
+      }
+    })();
+    // Une seule fois, au chargement.
   }, []);
 
   useEffect(() => {
@@ -231,6 +264,10 @@ export function App() {
       ? Math.max(1, Math.round((tick - zoneData.lastSuccessAt) / 60_000))
       : null;
 
+  // Réseau coupé, saturé (échecs / lenteur) ou envois bloqués : on propose le partage hors réseau.
+  const networkDegraded = !online || zoneData.degraded || outbox.pending > 0;
+  const suggestOffline = networkDegraded && !offlineMode && tick - degradedDismissedAt > 10 * 60_000;
+
   return (
     <div className="relative h-full w-full overflow-hidden">
       <MapView
@@ -292,6 +329,17 @@ export function App() {
             📴 Hors ligne : carte et derniers signalements connus.
           </p>
         )}
+        {suggestOffline && (
+          <div role="alert" className="pointer-events-auto flex items-center gap-2 rounded-xl bg-warn px-3 py-2 font-semibold text-white">
+            <span className="flex-1">📡 Réseau saturé ? Partagez les signalements de proche en proche, sans réseau.</span>
+            <button type="button" onClick={() => setOfflineMode(true)} className="rounded-lg bg-white px-2 py-1 text-warn">
+              Mode hors réseau
+            </button>
+            <button type="button" aria-label="Plus tard" onClick={() => setDegradedDismissedAt(Date.now())} className="px-1">
+              ✕
+            </button>
+          </div>
+        )}
         {outbox.pending > 0 && (
           <p role="status" className="pointer-events-auto rounded-xl bg-panel/95 px-3 py-2 text-sm font-semibold shadow">
             📤 {outbox.pending} envoi{outbox.pending > 1 ? 's' : ''} en attente du réseau
@@ -331,6 +379,17 @@ export function App() {
             onStop={trip.stop}
           />
         )}
+        {offlineMode && (
+          <section aria-label="Mode hors réseau" className="pointer-events-auto mx-auto flex w-full max-w-lg items-center gap-2 rounded-2xl border-2 border-warn bg-panel p-2 shadow-xl">
+            <span className="flex-1 pl-1 text-sm font-semibold">📡 Mode hors réseau : partagez et recevez par QR code.</span>
+            <button type="button" onClick={() => setShowShare(true)} className="min-h-11 rounded-xl bg-accent px-3 font-bold text-accent-fg">
+              Partager
+            </button>
+            <button type="button" onClick={() => setOfflineMode(false)} className="min-h-11 rounded-xl border-2 border-line px-2 text-sm font-semibold">
+              Quitter
+            </button>
+          </section>
+        )}
         <div className="flex items-end gap-2">
         <button
           type="button"
@@ -349,6 +408,16 @@ export function App() {
         >
           🧭 {trip.destination ? 'Nouvelle destination' : 'Trajet'}
         </button>
+        <button
+          type="button"
+          onClick={() => setOfflineMode((on) => !on)}
+          aria-pressed={offlineMode}
+          aria-label={offlineMode ? 'Quitter le mode hors réseau' : 'Activer le mode hors réseau'}
+          title="Mode hors réseau (partage par QR code)"
+          className={`min-h-16 rounded-2xl px-4 text-xl shadow-lg ${offlineMode ? 'bg-warn text-white' : 'bg-panel'}`}
+        >
+          📡
+        </button>
         {manif.position && (
           <button
             type="button"
@@ -366,6 +435,15 @@ export function App() {
         <div role="status" className="absolute inset-x-3 bottom-28 z-30 mx-auto max-w-md rounded-xl bg-accent px-4 py-3 text-center font-semibold text-accent-fg shadow-xl">
           {toast}
         </div>
+      )}
+
+      {showShare && (
+        <OfflineShareSheet
+          events={zoneData.events}
+          pending={outbox.pendingReports}
+          now={now}
+          onClose={() => setShowShare(false)}
+        />
       )}
 
       {reportTarget && (

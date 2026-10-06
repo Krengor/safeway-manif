@@ -59,6 +59,13 @@ export interface PublicEvent {
   expiresAt: number;
   /** Révision croissante : en cas de versions concurrentes (cache, temps réel), la plus haute gagne. */
   rev: number;
+  /** Signature Ed25519 du serveur (base64url), vérifiable hors ligne. */
+  sig?: string;
+  /**
+   * Côté client uniquement : signalement reçu hors réseau sans signature valide (par ex. fait
+   * hors ligne par un autre téléphone). Jamais affiché en rouge.
+   */
+  unverified?: true;
 }
 
 export interface ZoneEventsResponse {

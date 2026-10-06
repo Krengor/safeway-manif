@@ -16,6 +16,8 @@ const schema = z.object({
   REDIS_URL: z.string().min(1),
   VOTE_TOKEN_SECRET: secret,
   RATE_LIMIT_SECRET: secret,
+  /** Clé privée Ed25519 (PKCS#8 DER, base64url) signant les signalements. Requise en production. */
+  EVENT_SIGNING_KEY: z.string().min(40).optional(),
   /** Nombre de reverse proxies de confiance devant l'API (Caddy, LB…). */
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'silent']).default('info'),
@@ -24,7 +26,12 @@ const schema = z.object({
 export type Config = z.infer<typeof schema>;
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = schema.safeParse(env);
+  const parsed = schema
+    .refine((c) => c.NODE_ENV !== 'production' || c.EVENT_SIGNING_KEY, {
+      message: 'EVENT_SIGNING_KEY obligatoire en production (même clé sur toutes les instances)',
+      path: ['EVENT_SIGNING_KEY'],
+    })
+    .safeParse(env);
   if (!parsed.success) {
     // On n'affiche que les noms de variables fautives, jamais leurs valeurs.
     const fields = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('\n  ');

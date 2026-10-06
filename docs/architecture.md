@@ -160,6 +160,25 @@ PWA ──POST /api/route {from,to} (sans cookie)──► Caddy (retire Cookie)
   vidée avec le Mode Manif.
 - **Indicateurs** : « Hors ligne » immédiat, nombre d'envois en attente, âge des données affichées.
 
+## Partage hors réseau (V0.3)
+
+Quand le réseau sature ou tombe, les signalements passent de téléphone à téléphone, sans serveur :
+
+- **Déclenchement** : bouton 📡 (barre du bas) à tout moment, ou proposition automatique quand le réseau est
+  coupé, que les chargements échouent 2 fois de suite ou dépassent 5 s, ou que des envois restent bloqués.
+- **Émission** : QR code (scanné par l'appareil photo de l'autre téléphone) ou partage du système (AirDrop,
+  Quick Share, Bluetooth…). Le paquet (≤ 1 800 caractères, compressé) voyage dans le **fragment** d'une
+  adresse `/#p=…` : un fragment n'est jamais envoyé à un serveur. Dangers et signalements les plus récents
+  d'abord.
+- **Réception** : l'adresse ouvre SafeWay (coquille en cache, donc sans réseau), qui importe le paquet puis
+  l'efface de l'adresse.
+- **Authenticité** : chaque signalement public est signé par le serveur (Ed25519, `EVENT_SIGNING_KEY`). Le
+  téléphone vérifie la signature **hors ligne** avec la clé publique mise en cache à la dernière ouverture
+  en ligne. Signature invalide ou modifiée → écarté. Les signalements faits hors réseau par l'émetteur (pas
+  encore envoyés) sont transmis comme **« non vérifiés »** : jamais rouges, au mieux orange.
+- **Limites** : manuel, de proche en proche (un web ne peut pas faire de Bluetooth automatique) ; le
+  téléphone qui reçoit doit avoir ouvert SafeWay au moins une fois en ligne (application + clé publique).
+
 ## Résilience
 
 - Redis indisponible → la carte reste lisible (PostgreSQL), le rate limiting bascule en mémoire locale ;
