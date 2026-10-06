@@ -238,7 +238,7 @@ export function App() {
             Zoomez pour voir les signalements.
           </p>
         )}
-        <Legend />
+        <Legend live={zoneData.live} />
       </header>
 
       {/* Barre d'actions — utilisable au pouce */}

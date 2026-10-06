@@ -10,6 +10,7 @@ import Fastify, {
 import { randomUUID } from 'node:crypto';
 import type { Config } from './config.js';
 import type { Sql } from './db.js';
+import { RedisBus } from './lib/bus.js';
 import { HttpError } from './lib/http.js';
 import { RateLimiter } from './lib/rateLimit.js';
 import { SESSION_TTL_SECONDS, SessionStore } from './lib/sessions.js';
@@ -74,7 +75,7 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
     redis,
     sessions,
     limiter: new RateLimiter(redis, config.RATE_LIMIT_SECRET),
-    events: new EventService(sql, config.VOTE_TOKEN_SECRET),
+    events: new EventService(sql, config.VOTE_TOKEN_SECRET, new RedisBus(redis)),
     sessionCookie,
     sessionTtl: SESSION_TTL_SECONDS,
     cookieOptions,

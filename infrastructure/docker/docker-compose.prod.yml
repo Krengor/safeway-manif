@@ -54,6 +54,16 @@ services:
       redis: { condition: service_started }
     networks: [backend]
 
+  gateway:
+    build: { context: ../.., dockerfile: infrastructure/docker/gateway.Dockerfile }
+    restart: unless-stopped
+    environment:
+      PUBLIC_ORIGIN: https://${SAFEWAY_DOMAIN}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    depends_on:
+      redis: { condition: service_started }
+    networks: [backend]
+
   web:
     build: { context: ../.., dockerfile: infrastructure/docker/web.Dockerfile }
     restart: unless-stopped
@@ -68,7 +78,7 @@ services:
       - ../../apps/web/public/fonts:/srv/map/fonts:ro
       - ../../apps/web/public/sprites:/srv/map/sprites:ro
       - caddy_data:/data
-    depends_on: [api]
+    depends_on: [api, gateway]
     networks: [backend]
 
 networks:

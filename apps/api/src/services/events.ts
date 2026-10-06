@@ -15,6 +15,7 @@ import {
 } from '@safeway/shared';
 import type { TransactionSql } from 'postgres';
 import type { Sql } from '../db.js';
+import { noopBus, type EventBus } from '../lib/bus.js';
 import { actorToken } from '../lib/crypto.js';
 import { epoch } from '../lib/http.js';
 
@@ -29,9 +30,10 @@ interface EventRow {
   created_at: Date;
   last_confirmation_at: Date;
   expires_at: Date;
+  revision: number;
 }
 
-const COLUMNS = 'id, type, cell_id, confirmations, invalidations, created_at, last_confirmation_at, expires_at';
+const COLUMNS = 'id, type, cell_id, confirmations, invalidations, created_at, last_confirmation_at, expires_at, revision';
 
 export function toPublic(row: EventRow): PublicEvent {
   return {
@@ -43,6 +45,7 @@ export function toPublic(row: EventRow): PublicEvent {
     createdAt: epoch(row.created_at),
     lastConfAt: epoch(row.last_confirmation_at),
     expiresAt: epoch(row.expires_at),
+    rev: row.revision,
   };
 }
 
@@ -52,6 +55,8 @@ export class EventService {
   constructor(
     private readonly sql: Sql,
     private readonly voteSecret: string,
+    /** Diffusion temps réel, après validation de la transaction uniquement. */
+    private readonly bus: EventBus = noopBus,
   ) {}
 
   async listByZones(zones: readonly string[]): Promise<PublicEvent[]> {
@@ -81,7 +86,7 @@ export class EventService {
    */
   async report(userId: string, type: EventType, cell: string): Promise<{ event: PublicEvent; created: boolean }> {
     const ttlMinutes = EVENT_META[type].ttlMinutes;
-    return this.sql.begin(async (tx) => {
+    const result = await this.sql.begin(async (tx) => {
       // Un ancien signalement expiré mais pas encore purgé ne doit pas être « ressuscité ».
       await tx`DELETE FROM events WHERE cell_id = ${cell} AND type = ${type} AND expires_at <= now()`;
 
@@ -104,16 +109,22 @@ export class EventService {
       const event = await this.applyVote(tx, existing, userId, 1);
       return { event: event ?? toPublic(existing), created: false };
     });
+    this.bus.publish(zoneOf(cell), { event: result.event });
+    return result;
   }
 
   /** Vote « Toujours vrai » (+1) ou « Plus d'actualité » (-1). Null si l'événement n'existe plus. */
   async vote(userId: string, eventId: string, vote: Vote): Promise<PublicEvent | null> {
-    return this.sql.begin(async (tx) => {
+    const result = await this.sql.begin(async (tx) => {
       const [row] = await tx<EventRow[]>`
         SELECT ${tx.unsafe(COLUMNS)} FROM events WHERE id = ${eventId} AND expires_at > now() FOR UPDATE`;
       if (!row) return null;
-      return this.applyVote(tx, row, userId, vote);
+      return { cell: row.cell_id, event: await this.applyVote(tx, row, userId, vote) };
     });
+    if (!result) return null;
+    // Un événement retiré par la communauté est signalé aux clients pour disparaître aussitôt.
+    this.bus.publish(zoneOf(result.cell), result.event ? { event: result.event } : { removed: eventId });
+    return result.event;
   }
 
   private async applyVote(tx: Tx, row: EventRow, userId: string, vote: Vote): Promise<PublicEvent | null> {
@@ -140,7 +151,8 @@ export class EventService {
         confirmations = ${conf},
         invalidations = ${inv},
         last_confirmation_at = CASE WHEN ${vote === 1} THEN now() ELSE last_confirmation_at END,
-        expires_at = to_timestamp(${expiresAt})
+        expires_at = to_timestamp(${expiresAt}),
+        revision = revision + 1
       WHERE id = ${row.id}
       RETURNING ${tx.unsafe(COLUMNS)}`;
     if (!updated) return null;

@@ -3,6 +3,12 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Même origine pour l'API et le temps réel en local (comme derrière Caddy en production).
+const devProxy = {
+  '/api': 'http://127.0.0.1:4380',
+  '/ws': { target: 'ws://127.0.0.1:4381', ws: true },
+};
+
 export default defineConfig({
   plugins: [
     react(),
@@ -33,13 +39,13 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    // Même origine pour l'API en dev : cookies SameSite=Strict et WebAuthn simples.
-    proxy: { '/api': 'http://127.0.0.1:4380' },
+    // Cookies SameSite=Strict et WebAuthn simples grâce à la même origine.
+    proxy: devProxy,
   },
   // `vite preview` applique la même CSP que la production (Caddyfile) pour la tester localement.
   preview: {
     port: 4173,
-    proxy: { '/api': 'http://127.0.0.1:4380' },
+    proxy: devProxy,
     headers: {
       'Content-Security-Policy':
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; child-src blob:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",

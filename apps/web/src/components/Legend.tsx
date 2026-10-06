@@ -6,7 +6,7 @@ const ITEMS = [
 ];
 
 /** Légende : chaque couleur est doublée d'un symbole et d'un texte (§25). */
-export function Legend() {
+export function Legend({ live }: { live: boolean }) {
   return (
     <ul className="pointer-events-auto flex flex-wrap gap-x-3 gap-y-1 rounded-xl bg-panel/95 px-3 py-2 text-xs font-semibold shadow" aria-label="Légende">
       {ITEMS.map((item) => (
@@ -17,6 +17,12 @@ export function Legend() {
           {item.label}
         </li>
       ))}
+      <li className="ml-auto flex items-center gap-1 text-muted" title={live ? 'Mises à jour en direct' : 'Actualisation toutes les 10 s'}>
+        <span aria-hidden="true" className={live ? 'text-ok' : ''}>
+          {live ? '●' : '○'}
+        </span>
+        {live ? 'Direct' : 'Différé'}
+      </li>
     </ul>
   );
 }

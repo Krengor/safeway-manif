@@ -53,6 +53,8 @@ export interface PublicEvent {
   createdAt: number;
   lastConfAt: number;
   expiresAt: number;
+  /** Révision croissante : en cas de versions concurrentes (cache, temps réel), la plus haute gagne. */
+  rev: number;
 }
 
 export interface ZoneEventsResponse {
