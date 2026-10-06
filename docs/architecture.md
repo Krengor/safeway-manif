@@ -104,6 +104,17 @@ PWA ──POST /api/route {from,to} (sans cookie)──► Caddy (retire Cookie)
   écarts < 0,01 sont remis exactement à 1 : pas de trace durable d'activité ni de date.
 - Le score n'est jamais exposé (ni API, ni interface) et disparaît avec le compte.
 
+### Anti-abus avancé (V0.3)
+
+- **Preuve de travail à l'inscription** (`/api/auth/pow`) : SHA-256 à 16 bits nuls (~0,4 s sur ordinateur,
+  1-2 s sur téléphone), défi à usage unique de 5 min ; la difficulté monte (18 → 22 bits) si les
+  inscriptions dépassent 50 / 200 / 500 en 10 min. Ni IP, ni CAPTCHA tiers : les IP mobiles (CGNAT) sont
+  partagées par des milliers de personnes, les limiter bloquerait des manifestants légitimes.
+- **Période probatoire** : un compte créé aujourd'hui ou hier pèse au plus 0,5 dans les votes et ne peut
+  créer que 3 signalements / 10 min. La date de création est au jour près.
+- **Détection de pics** : nouveaux signalements comptés par zone sur 5 min (Redis, zones uniquement) ;
+  au-delà de 15, la zone apparaît dans l'écran de modération. Rien n'est bloqué automatiquement.
+
 ### Anti-spam par compte
 
 - Un même compte ne peut ni gonfler un signalement (un doublon devient une confirmation, un seul vote par

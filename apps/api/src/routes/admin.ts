@@ -60,6 +60,7 @@ export async function adminRoutes(app: FastifyInstance, ctx: AppContext): Promis
       accounts: accounts?.total ?? 0,
       suspended: accounts?.suspended ?? 0,
       lowReliability: accounts?.low ?? 0,
+      surges: await ctx.surge.current().catch(() => []),
     };
   });
 

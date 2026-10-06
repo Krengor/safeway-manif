@@ -11,11 +11,12 @@ import {
   type AuthenticatorTransportFuture,
   type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
-import { registerOptionsSchema } from '@safeway/shared';
+import { registerOptionsSchema, type PowChallenge } from '@safeway/shared';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomToken } from '../lib/crypto.js';
 import { HttpError, parse } from '../lib/http.js';
+import { ProofOfWork } from '../lib/pow.js';
 import { RATE_RULES } from '../lib/rateLimit.js';
 import type { AppContext } from '../server.js';
 
@@ -64,12 +65,22 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
 
   // --- Inscription -----------------------------------------------------------------
 
+  const pow = new ProofOfWork(redis);
+
+  /** Défi de preuve de travail, à résoudre avant de demander les options d'inscription. */
+  app.get('/auth/pow', async (request): Promise<PowChallenge> => {
+    await limiter.consume(RATE_RULES.auth, `ip:${request.ip}`);
+    return pow.issue();
+  });
+
   app.post('/auth/passkey/register/options', async (request, reply) => {
     await limiter.consume(RATE_RULES.auth, `ip:${request.ip}`);
-    const { pseudo } = parse(registerOptionsSchema, request.body);
+    const { pseudo, pow: solution } = parse(registerOptionsSchema, request.body);
 
     const [taken] = await sql`SELECT 1 FROM users WHERE lower(pseudo) = lower(${pseudo})`;
     if (taken) throw new HttpError(409, 'pseudo_taken', 'Ce pseudo est déjà pris.');
+    // Anti-création massive de comptes (§20), sans IP ni CAPTCHA : preuve de travail.
+    await pow.verify(solution);
 
     const userId = randomUUID();
     const options = await generateRegistrationOptions({
@@ -118,6 +129,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       throw err;
     }
 
+    await pow.recordRegistration().catch(() => {});
     await openSession(reply, pending.userId);
     return { pseudo: pending.pseudo };
   });

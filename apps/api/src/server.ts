@@ -13,6 +13,7 @@ import type { Sql } from './db.js';
 import { RedisBus } from './lib/bus.js';
 import { HttpError } from './lib/http.js';
 import { RateLimiter } from './lib/rateLimit.js';
+import { SurgeDetector } from './lib/surge.js';
 import { SESSION_TTL_SECONDS, SessionStore } from './lib/sessions.js';
 import type { Redis } from './redis.js';
 import { authRoutes } from './routes/auth.js';
@@ -32,6 +33,7 @@ export interface AppContext {
   limiter: RateLimiter;
   events: EventService;
   reputation: ReputationService;
+  surge: SurgeDetector;
   sessionCookie: string;
   sessionTtl: number;
   cookieOptions: CookieSerializeOptions;
@@ -84,6 +86,7 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
       links: reputationLinks,
     }),
     reputation: new ReputationService(sql, reputationLinks, redis),
+    surge: new SurgeDetector(redis),
     sessionCookie,
     sessionTtl: SESSION_TTL_SECONDS,
     cookieOptions,

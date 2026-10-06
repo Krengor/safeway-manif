@@ -6,12 +6,19 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/browser';
 import { api } from './api';
+import { solvePow } from './pow';
 
 export const passkeysSupported = browserSupportsWebAuthn;
 
-/** Crée le compte : pseudo + passkey générée sur l'appareil. Aucun mot de passe. */
-export async function registerWithPasskey(pseudo: string): Promise<string> {
-  const options = (await api.registerOptions(pseudo)) as PublicKeyCredentialCreationOptionsJSON;
+/**
+ * Crée le compte : pseudo + passkey générée sur l'appareil. Aucun mot de passe.
+ * Une courte preuve de travail (~1 s) précède l'inscription, contre la création de masse.
+ */
+export async function registerWithPasskey(pseudo: string, onStep?: (step: 'pow' | 'passkey') => void): Promise<string> {
+  onStep?.('pow');
+  const pow = await solvePow(await api.powChallenge());
+  onStep?.('passkey');
+  const options = (await api.registerOptions(pseudo, pow)) as PublicKeyCredentialCreationOptionsJSON;
   const response = await startRegistration({ optionsJSON: options });
   const me = await api.registerVerify(response);
   return me.pseudo;

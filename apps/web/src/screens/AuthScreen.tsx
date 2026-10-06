@@ -13,6 +13,7 @@ export function AuthScreen({ reason, onDone, onCancel }: Props) {
   const [pseudo, setPseudo] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState<'pow' | 'passkey' | null>(null);
   const supported = passkeysSupported();
 
   async function run(action: () => Promise<string>, created: boolean) {
@@ -24,6 +25,7 @@ export function AuthScreen({ reason, onDone, onCancel }: Props) {
       setError(passkeyErrorMessage(err));
     } finally {
       setBusy(false);
+      setStep(null);
     }
   }
 
@@ -34,7 +36,7 @@ export function AuthScreen({ reason, onDone, onCancel }: Props) {
       setError('Pseudo : 3 à 24 caractères, lettres, chiffres, - et _ uniquement.');
       return;
     }
-    void run(() => registerWithPasskey(parsed.data), true);
+    void run(() => registerWithPasskey(parsed.data, setStep), true);
   }
 
   return (
@@ -78,8 +80,13 @@ export function AuthScreen({ reason, onDone, onCancel }: Props) {
           disabled={busy || !supported}
           className="min-h-14 rounded-xl bg-accent text-lg font-bold text-accent-fg disabled:opacity-50"
         >
-          Créer mon compte avec une passkey
+          {busy && step === 'pow' ? 'Vérification anti-robot…' : 'Créer mon compte avec une passkey'}
         </button>
+        {busy && step === 'pow' && (
+          <p role="status" className="text-sm text-muted">
+            Une seconde : votre téléphone prouve qu'il n'est pas un robot (aucune donnée envoyée).
+          </p>
+        )}
       </form>
 
       <div className="flex items-center gap-3 text-muted" aria-hidden="true">

@@ -16,6 +16,14 @@ export const REPUTATION_MAX = 2;
 /** Facteur appliqué chaque heure à l'écart à la neutralité : 0,99^69 ≈ 0,5 → demi-vie ≈ 69 h. */
 export const REPUTATION_HOURLY_DECAY = 0.99;
 
+/**
+ * Période probatoire (§20, création massive de comptes) : un compte créé aujourd'hui ou hier
+ * pèse au plus PROBATION_WEIGHT dans les votes et a un quota de signalements réduit.
+ * (La date de création n'est stockée qu'au jour près.)
+ */
+export const PROBATION_DAYS = 1;
+export const PROBATION_WEIGHT = 0.5;
+
 export type EventOutcome = 'confirmed' | 'withdrawn' | 'neutral';
 
 /** Bilan d'un signalement arrivé à son terme (expiré ou retiré). */
