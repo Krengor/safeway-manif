@@ -48,6 +48,8 @@ interface Props {
   /** Itinéraire affiché (mémoire locale uniquement). */
   route: MapRoute | null;
   destination: LocalPosition | null;
+  /** Animations de caméra (coupées sous forte charge, §56). */
+  animate: boolean;
   /** Zones H3 visibles, ou null si la vue est trop large pour charger les signalements. */
   onZonesChange(zones: string[] | null): void;
   onSelectCell(cell: string): void;
@@ -174,7 +176,11 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(props, 
   useImperativeHandle(ref, () => ({
     recenter(position) {
       const map = mapRef.current;
-      map?.easeTo({ center: [position.lng, position.lat], zoom: Math.max(map.getZoom(), 16) });
+      map?.easeTo({
+        center: [position.lng, position.lat],
+        zoom: Math.max(map.getZoom(), 16),
+        duration: latest.current.animate ? 500 : 0,
+      });
     },
   }));
 
@@ -314,7 +320,7 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(props, 
           [Math.min(...lngs), Math.min(...lats)],
           [Math.max(...lngs), Math.max(...lats)],
         ],
-        { padding: { top: 140, bottom: 220, left: 40, right: 40 }, maxZoom: 17, duration: 600 },
+        { padding: { top: 140, bottom: 220, left: 40, right: 40 }, maxZoom: 17, duration: latest.current.animate ? 600 : 0 },
       );
     }
   }, [props.route]);

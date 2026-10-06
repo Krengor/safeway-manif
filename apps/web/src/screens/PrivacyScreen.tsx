@@ -4,12 +4,14 @@ import { OfflineMapPanel } from '../components/OfflineMapPanel';
 const SOURCE_URL = 'https://github.com/Krengor/safeway-manif';
 
 interface Props {
+  /** Fonctions secondaires disponibles (dégradation contrôlée, §56). */
+  secondary: boolean;
   onClose(): void;
   onShowTutorial(): void;
 }
 
 /** Écran « Confidentialité » (§37) : ce que l'app fait, ne fait pas, et ses limites. */
-export function PrivacyScreen({ onClose, onShowTutorial }: Props) {
+export function PrivacyScreen({ secondary, onClose, onShowTutorial }: Props) {
   return (
     <main className="safe-top safe-bottom mx-auto flex min-h-full max-w-md flex-col gap-5 px-4">
       <button type="button" onClick={onClose} className="self-start py-2 font-semibold text-muted">
@@ -28,7 +30,7 @@ export function PrivacyScreen({ onClose, onShowTutorial }: Props) {
           Le réseau mobile sature souvent en manifestation : téléchargez la carte avant de partir pour l'avoir même
           sans réseau. Elle reste sur votre appareil.
         </p>
-        <OfflineMapPanel />
+        <OfflineMapPanel disabled={!secondary} />
       </section>
 
       <h1 className="text-2xl font-bold">Confidentialité</h1>

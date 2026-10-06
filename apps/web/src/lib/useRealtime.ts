@@ -6,20 +6,23 @@
  * - En cas d'échec, l'app continue en polling : le temps réel est une amélioration,
  *   jamais une dépendance (§57).
  */
-import { REALTIME_PATH, type PublicEvent, type ServerMessage } from '@safeway/shared';
+import { REALTIME_PATH, type DegradationLevel, type PublicEvent, type ServerMessage } from '@safeway/shared';
 import { useEffect, useRef, useState } from 'react';
 
 const MAX_BACKOFF_MS = 30_000;
 
 export type RealtimeHandler = (events: PublicEvent[], removed: string[]) => void;
+export type LevelHandler = (level: DegradationLevel) => void;
 
-export function useRealtime(zones: readonly string[], onUpdate: RealtimeHandler): boolean {
+export function useRealtime(zones: readonly string[], onUpdate: RealtimeHandler, onLevel?: LevelHandler): boolean {
   const [connected, setConnected] = useState(false);
   const socket = useRef<WebSocket | null>(null);
   const zonesRef = useRef(zones);
   zonesRef.current = zones;
   const handler = useRef(onUpdate);
   handler.current = onUpdate;
+  const levelHandler = useRef(onLevel);
+  levelHandler.current = onLevel;
   const zonesKey = zones.join(',');
 
   useEffect(() => {
@@ -50,6 +53,8 @@ export function useRealtime(zones: readonly string[], onUpdate: RealtimeHandler)
           return;
         }
         if (data.t === 'upd') handler.current(data.events, data.removed);
+        // Niveau de dégradation (§56) : à la connexion puis à chaque changement.
+        else if (data.t === 'hello' || data.t === 'load') levelHandler.current?.(data.level);
       };
       ws.onclose = () => {
         setConnected(false);

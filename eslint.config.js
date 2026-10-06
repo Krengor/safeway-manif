@@ -20,6 +20,6 @@ export default tseslint.config(
   {
     // Scripts k6 : runtime spécifique, pas Node.
     files: ['tests/load/**/*.js'],
-    languageOptions: { globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly' } },
+    languageOptions: { globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly', open: 'readonly' } },
   },
 );

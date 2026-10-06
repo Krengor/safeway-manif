@@ -24,6 +24,7 @@ pourrait en tirer.
 | Clé publique de signature du serveur | localStorage du téléphone | jusqu'à la prochaine mise à jour | aucune (publique) |
 | Carte hors ligne d'une région | Cache Storage du téléphone | jusqu'à suppression par l'utilisateur | sur l'appareil seulement : indique la région préparée (choix volontaire), pas les rues consultées |
 | Logs | stdout | selon l'hébergeur | méthode, route, statut, durée |
+| Métriques internes | mémoire de l'API / du gateway, port interne | jusqu'au redémarrage | volumes agrégés par motif de route ; ni IP, ni pseudo, ni zone |
 
 ## Point d'attention connu
 

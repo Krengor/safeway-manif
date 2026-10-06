@@ -32,7 +32,12 @@ export const RATE_RULES = {
   reportProbation: { name: 'report-new', limit: 3, windowSeconds: 600, message: TOO_FAST },
   vote: { name: 'vote', limit: 60, windowSeconds: 600 },
   admin: { name: 'admin', limit: 120, windowSeconds: 60 },
-  read: { name: 'read', limit: 600, windowSeconds: 60 },
+  /**
+   * Lecture de la carte, par IP. Volontairement large : derrière le NAT d'un opérateur mobile,
+   * des centaines de manifestants partagent la même adresse, et lire la carte est la priorité
+   * n° 1 (§56). Les lectures sont mutualisées (micro-cache par zone), un flood coûte peu.
+   */
+  read: { name: 'read', limit: 3000, windowSeconds: 60 },
 } as const satisfies Record<string, RateRule>;
 
 /** En dessous, le quota réduit s'applique (≈ 2 signalements retirés sans compensation). */

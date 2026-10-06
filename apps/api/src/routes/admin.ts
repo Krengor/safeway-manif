@@ -7,6 +7,8 @@
 import {
   EVENT_TYPES,
   accountActionSchema,
+  adminLoadSchema,
+  type AdminLoadStatus,
   type AdminAccountsResponse,
   type AdminEventsResponse,
   type AdminOverview,
@@ -61,7 +63,20 @@ export async function adminRoutes(app: FastifyInstance, ctx: AppContext): Promis
       suspended: accounts?.suspended ?? 0,
       lowReliability: accounts?.low ?? 0,
       surges: await ctx.surge.current().catch(() => []),
+      load: ctx.load.status,
     };
+  });
+
+  /**
+   * Forcer un niveau de dégradation (§56) pendant une durée bornée — par exemple avant une
+   * manifestation très suivie — ou revenir au calcul automatique.
+   */
+  app.post('/admin/load', async (request): Promise<AdminLoadStatus> => {
+    await requireAdmin(request);
+    const { level, minutes } = parse(adminLoadSchema, request.body);
+    const status = await ctx.load.force(level, minutes);
+    request.log.info({ action: 'admin_load', level }, 'modération');
+    return status;
   });
 
   app.get('/admin/events', async (request): Promise<AdminEventsResponse> => {

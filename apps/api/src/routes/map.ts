@@ -1,5 +1,6 @@
 import {
   SIGNING_KEY_PATH,
+  degradationPolicy,
   isZoneCell,
   type MapStatusResponse,
   type SigningKeyResponse,
@@ -21,8 +22,10 @@ export async function mapRoutes(app: FastifyInstance, ctx: AppContext): Promise<
     const { zone } = request.params;
     if (!isZoneCell(zone)) throw new HttpError(400, 'invalid_zone');
 
-    const events = await ctx.events.listByZones([zone]);
-    reply.header('cache-control', 'public, max-age=5, stale-while-revalidate=10');
+    const events = await ctx.events.listZone(zone);
+    // Sous forte charge, le cache s'allonge : moins de requêtes atteignent l'origine (§56).
+    const maxAge = degradationPolicy(ctx.load.level).zoneCacheSeconds;
+    reply.header('cache-control', `public, max-age=${maxAge}, stale-while-revalidate=${maxAge * 2}`);
     return { now: Math.floor(Date.now() / 1000), zones: [zone], events };
   });
 
@@ -33,8 +36,8 @@ export async function mapRoutes(app: FastifyInstance, ctx: AppContext): Promise<
   });
 
   app.get('/map/status', async (_request, reply): Promise<MapStatusResponse> => {
-    reply.header('cache-control', 'public, max-age=30');
-    // V0.1 : niveau fixe. Le niveau de dégradation (§56) sera piloté par la charge en V0.3.
-    return { now: Math.floor(Date.now() / 1000), level: 0, refreshSeconds: 10 };
+    // Niveau de dégradation contrôlée (§56), recalculé toutes les 5 s à partir de la charge.
+    reply.header('cache-control', 'public, max-age=5');
+    return { now: Math.floor(Date.now() / 1000), level: ctx.load.level };
   });
 }

@@ -5,13 +5,15 @@ import { api, ApiRequestError } from '../lib/api';
 interface Props {
   pseudo: string;
   isAdmin: boolean;
+  /** Fonctions secondaires disponibles (dégradation contrôlée, §56). */
+  secondary: boolean;
   onModeration(): void;
   onPseudoChange(pseudo: string): void;
   onSignedOut(): void;
   onClose(): void;
 }
 
-export function AccountScreen({ pseudo, isAdmin, onModeration, onPseudoChange, onSignedOut, onClose }: Props) {
+export function AccountScreen({ pseudo, isAdmin, secondary, onModeration, onPseudoChange, onSignedOut, onClose }: Props) {
   const [value, setValue] = useState(pseudo);
   const [message, setMessage] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -65,7 +67,12 @@ export function AccountScreen({ pseudo, isAdmin, onModeration, onPseudoChange, o
           autoComplete="off"
           className="min-h-12 rounded-xl border-2 border-line bg-bg px-3 text-lg"
         />
-        <button type="submit" disabled={busy || value === pseudo} className="min-h-12 rounded-xl bg-accent font-bold text-accent-fg disabled:opacity-50">
+        {!secondary && (
+          <p role="status" className="text-sm font-semibold text-warn">
+            Forte affluence : changement de pseudo suspendu, réessayez plus tard.
+          </p>
+        )}
+        <button type="submit" disabled={busy || value === pseudo || !secondary} className="min-h-12 rounded-xl bg-accent font-bold text-accent-fg disabled:opacity-50">
           Changer de pseudo
         </button>
       </form>

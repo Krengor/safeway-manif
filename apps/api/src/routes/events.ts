@@ -37,6 +37,7 @@ export async function eventRoutes(app: FastifyInstance, ctx: AppContext): Promis
 
     const result = await events.report(userId, body.type, body.cell);
     if (result.created) ctx.surge.record(zoneOf(body.cell));
+    ctx.metrics.reports.inc({ kind: result.created ? 'new' : 'merged' });
     reply.code(result.created ? 201 : 200);
     return result;
   });
@@ -59,7 +60,9 @@ export async function eventRoutes(app: FastifyInstance, ctx: AppContext): Promis
       if (!isNear(presenceCell, cell)) throw TOO_FAR();
       await limiter.consume(RATE_RULES.vote, `u:${userId}`);
 
-      return { event: await events.vote(userId, id, vote) };
+      const event = await events.vote(userId, id, vote);
+      ctx.metrics.votes.inc({ kind: vote === 1 ? 'confirm' : 'invalidate' });
+      return { event };
     };
 
   app.post<{ Params: { id: string } }>('/events/:id/confirm', voteHandler(1));

@@ -8,6 +8,7 @@
     "dev": "tsx watch --env-file=../../.env src/index.ts",
     "migrate": "tsx --env-file=../../.env src/migrate-cli.ts",
     "admin": "tsx --env-file=../../.env src/admin-cli.ts",
+    "loadtest": "tsx --env-file=../../.env src/loadtest-cli.ts",
     "build": "tsup",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json",

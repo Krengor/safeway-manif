@@ -11,8 +11,10 @@ async function send(item: OutboxItem): Promise<SendResult> {
     const res = item.vote === 1 ? await api.confirm(item.eventId, item.presenceCell) : await api.invalidate(item.eventId, item.presenceCell);
     return { ok: true, event: res.event };
   } catch (err) {
-    // Réseau absent ou serveur saturé : on réessaiera. Refus explicite (4xx) : abandon.
-    const retry = !(err instanceof ApiRequestError) || err.status === 0 || err.status === 429 || err.status >= 500;
+    // Réseau absent, serveur saturé ou session perdue (reconnexion attendue) : on réessaiera
+    // jusqu'à l'expiration de l'envoi. Autre refus explicite (4xx) : abandon.
+    const retry =
+      !(err instanceof ApiRequestError) || [0, 401, 429].includes(err.status) || err.status >= 500;
     return { ok: false, retry };
   }
 }

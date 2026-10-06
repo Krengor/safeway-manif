@@ -7,6 +7,7 @@
 import { z } from 'zod';
 import { EVENT_TYPES } from './events.js';
 import { isEventCell } from './geo.js';
+import type { DegradationLevel } from './load.js';
 import { powSolutionSchema } from './pow.js';
 
 export const API_PREFIX = '/api';
@@ -75,14 +76,10 @@ export interface ZoneEventsResponse {
   events: PublicEvent[];
 }
 
-export type DegradationLevel = 0 | 1 | 2 | 3;
-
 export interface MapStatusResponse {
   now: number;
-  /** Niveau de dégradation contrôlée (§56). */
+  /** Niveau de dégradation contrôlée (§56) ; le client en déduit sa politique (`degradationPolicy`). */
   level: DegradationLevel;
-  /** Intervalle de rafraîchissement conseillé au client (s). */
-  refreshSeconds: number;
 }
 
 export interface MeResponse {
@@ -109,7 +106,24 @@ export interface AdminOverview {
   lowReliability: number;
   /** Zones recevant un nombre inhabituel de NOUVEAUX signalements (fenêtre de 5 min). */
   surges: { zone: string; newEvents: number }[];
+  load: AdminLoadStatus;
 }
+
+/** État de la dégradation contrôlée (§56) vu par l'administrateur. */
+export interface AdminLoadStatus {
+  /** Niveau appliqué. */
+  level: DegradationLevel;
+  /** Niveau mesuré automatiquement (pire instance). */
+  auto: DegradationLevel;
+  /** Fin du forçage manuel (epoch s), absent si le niveau est automatique. */
+  forcedUntil?: number;
+}
+
+/** Forcer un niveau pendant `minutes`, ou revenir à l'automatique (`level: null`). */
+export const adminLoadSchema = z.object({
+  level: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).nullable(),
+  minutes: z.number().int().min(1).max(240).default(60),
+});
 
 export interface AdminEventsResponse {
   events: (PublicEvent & { zone: string })[];

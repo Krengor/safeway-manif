@@ -101,6 +101,9 @@ button {
   bottom: calc(5.5rem + env(safe-area-inset-bottom));
 }
 
+/* Dégradation contrôlée (§56) : animations coupées sous forte charge. */
+:root[data-motion='off'] * { transition: none !important; animation: none !important; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }

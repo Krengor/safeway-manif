@@ -47,3 +47,7 @@ SAFEWAY_MANIF_CAHIER_DES_CHARGES*.md
 # Données Valhalla (OSM + graphe construit)
 infrastructure/valhalla/custom_files/
 apps/web/public/tiles/regions.json
+
+# Tests de charge : jetons de session des comptes de test, résultats
+tests/load/fixtures.json
+tests/load/results/

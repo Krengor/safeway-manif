@@ -14,6 +14,8 @@ import type { Sql } from './db.js';
 import { RedisBus } from './lib/bus.js';
 import { rateKey } from './lib/crypto.js';
 import { HttpError } from './lib/http.js';
+import { LoadMonitor } from './lib/load.js';
+import { createApiMetrics, type ApiMetrics } from './lib/metrics.js';
 import { RateLimiter } from './lib/rateLimit.js';
 import { EventSigner } from './lib/signing.js';
 import { SurgeDetector } from './lib/surge.js';
@@ -38,12 +40,32 @@ export interface AppContext {
   reputation: ReputationService;
   surge: SurgeDetector;
   signer: EventSigner;
+  /** Niveau de dégradation contrôlée (§56). */
+  load: LoadMonitor;
+  metrics: ApiMetrics;
   sessionCookie: string;
   sessionTtl: number;
   cookieOptions: CookieSerializeOptions;
   /** Renvoie l'identifiant de l'utilisateur connecté ou lève une 401. */
   requireUser(request: FastifyRequest): Promise<string>;
 }
+
+/** Codes d'erreur de connexion (Node, postgres.js) : dépendance injoignable, pas un bogue. */
+const CONNECTION_ERRORS = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EPIPE',
+  'CONNECT_TIMEOUT',
+  'CONNECTION_CLOSED',
+  'CONNECTION_ENDED',
+  'CONNECTION_DESTROYED',
+]);
+
+const contexts = new WeakMap<FastifyInstance, AppContext>();
+
+/** Contexte d'une application construite par `buildApp` (métriques, niveau de charge…). */
+export const contextOf = (app: FastifyInstance): AppContext => contexts.get(app)!;
 
 export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis }): Promise<FastifyInstance> {
   const { config, sql, redis } = deps;
@@ -78,6 +100,8 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
   };
 
   const sessions = new SessionStore(redis);
+  const load = new LoadMonitor(redis);
+  const metrics = createApiMetrics(load);
   const reputationLinks = new RedisReputationLinks(redis);
   const signer = new EventSigner(config.EVENT_SIGNING_KEY);
   const ctx: AppContext = {
@@ -94,6 +118,8 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
     signer,
     reputation: new ReputationService(sql, reputationLinks, redis),
     surge: new SurgeDetector(redis),
+    load,
+    metrics,
     sessionCookie,
     sessionTtl: SESSION_TTL_SECONDS,
     cookieOptions,
@@ -126,6 +152,18 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
     errorResponseBuilder: () => new HttpError(429, 'rate_limited', 'Trop de requêtes, réessayez dans quelques minutes.'),
   });
 
+  // Mesures système (§56, §64) : durée et statut par motif de route, jamais l'URL réelle.
+  app.addHook('onRequest', async () => load.requestStarted());
+  app.addHook('onResponse', async (request, reply) => {
+    load.requestFinished(reply.elapsedTime, reply.statusCode);
+    const route = request.routeOptions.url ?? 'unmatched';
+    metrics.requests.inc({ route, method: request.method, status: `${Math.floor(reply.statusCode / 100)}xx` });
+    metrics.duration.observe(reply.elapsedTime / 1000, { route });
+    if (reply.statusCode === 429) metrics.rateLimited.inc();
+  });
+  app.addHook('onClose', () => load.stop());
+  if (config.NODE_ENV !== 'test') load.start();
+
   // Défense CSRF (§35) : SameSite=Strict + en-tête personnalisé + vérification d'origine.
   app.addHook('onRequest', async (request) => {
     if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') return;
@@ -147,6 +185,12 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
     if (status && status >= 400 && status < 500) {
       return reply.code(status).send({ error: 'bad_request' });
     }
+    // Redis ou PostgreSQL injoignable : 503 « réessayez », que l'app traite comme une coupure
+    // réseau (l'envoi reste en attente et repart seul), plutôt qu'un 500 définitif.
+    if (redis.status !== 'ready' || CONNECTION_ERRORS.has(String((error as { code?: unknown }).code))) {
+      request.log.warn({ err: { type: error.name } }, 'dépendance indisponible');
+      return reply.code(503).send({ error: 'unavailable', message: 'Service momentanément indisponible, réessayez.' });
+    }
     // On journalise le type d'erreur, jamais le payload de la requête.
     request.log.error({ err: { type: error.name, message: error.message } }, 'erreur interne');
     return reply.code(500).send({ error: 'internal' });
@@ -166,5 +210,6 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
     { prefix: API_PREFIX },
   );
 
+  contexts.set(app, ctx);
   return app;
 }

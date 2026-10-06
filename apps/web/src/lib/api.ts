@@ -11,6 +11,8 @@ import {
   type ApiError,
   type CreateEventBody,
   type MapStatusResponse,
+  type AdminLoadStatus,
+  type DegradationLevel,
   type MeResponse,
   type PublicEvent,
   type VoteResponse,
@@ -94,6 +96,8 @@ export const api = {
     accounts: () => request<AdminAccountsResponse>('GET', '/admin/accounts'),
     suspend: (pseudo: string) => request<void>('POST', '/admin/accounts/suspend', { pseudo }),
     unsuspend: (pseudo: string) => request<void>('POST', '/admin/accounts/unsuspend', { pseudo }),
+    setLoad: (level: DegradationLevel | null, minutes = 60) =>
+      request<AdminLoadStatus>('POST', '/admin/load', { level, minutes }),
   },
 
   /** Itinéraire : coordonnées précises indispensables, mais requête anonyme et jamais conservée. */
