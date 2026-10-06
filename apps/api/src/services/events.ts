@@ -217,6 +217,24 @@ export class EventService {
     return epoch(updated.expires_at) <= now ? null : toPublic(updated);
   }
 
+  /** Liste complète des signalements actifs, pour la modération (données déjà publiques). */
+  async listActive(limit = 500): Promise<(PublicEvent & { zone: string })[]> {
+    const rows = await this.sql<(EventRow & { zone_id: string })[]>`
+      SELECT ${this.sql.unsafe(COLUMNS)}, zone_id FROM events
+      WHERE expires_at > now() ORDER BY created_at DESC LIMIT ${limit}`;
+    return rows.map((row) => ({ ...toPublic(row), zone: row.zone_id }));
+  }
+
+  /** Suppression par la modération : retirée aussitôt chez tous les clients. */
+  async remove(id: string): Promise<SettledEvent | null> {
+    const [row] = await this.sql<(SettledEvent & { zone_id: string })[]>`
+      DELETE FROM events WHERE id = ${id}
+      RETURNING id, zone_id, confirmations, invalidations, support_weight, against_weight`;
+    if (!row) return null;
+    this.bus.publish(row.zone_id, { removed: id });
+    return row;
+  }
+
   /**
    * Suppression physique des événements expirés, par lots (§30), puis règlement de la
    * réputation. Le DELETE … RETURNING « réserve » chaque événement : deux instances qui

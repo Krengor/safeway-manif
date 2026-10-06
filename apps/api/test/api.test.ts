@@ -25,7 +25,7 @@ let sessions: SessionStore;
 async function newUser(pseudo = `t_${randomUUID().slice(0, 8)}`) {
   const [user] = await sql<{ id: string }[]>`INSERT INTO users (pseudo) VALUES (${pseudo}) RETURNING id`;
   const token = await sessions.create(user!.id);
-  return { id: user!.id, cookie: `sw_session=${token}` };
+  return { id: user!.id, pseudo, cookie: `sw_session=${token}` };
 }
 
 function post(url: string, cookie: string | null, payload: unknown) {
@@ -396,6 +396,88 @@ describe('réputation', () => {
     await new ReputationService(sql, new RedisReputationLinks(redis)).decay();
     expect(await rep(high.id)).toBeCloseTo(1.99, 5);
     expect(await rep(almost.id)).toBe(1);
+  });
+});
+
+describe('modération', () => {
+  async function newAdmin() {
+    const admin = await newUser();
+    await sql`UPDATE users SET role = 'admin' WHERE id = ${admin.id}`;
+    return admin;
+  }
+  const get = (url: string, cookie: string) => app.inject({ method: 'GET', url, headers: { cookie } });
+
+  it("refuse l'accès à un compte normal", async () => {
+    const user = await newUser();
+    expect((await get('/api/admin/overview', user.cookie)).statusCode).toBe(403);
+    expect((await post('/api/admin/accounts/suspend', user.cookie, { pseudo: 't_x' })).statusCode).toBe(403);
+  });
+
+  it("signale le rôle dans /me uniquement pour l'administrateur", async () => {
+    const admin = await newAdmin();
+    const user = await newUser();
+    expect((await get('/api/me', admin.cookie)).json()).toMatchObject({ admin: true });
+    expect((await get('/api/me', user.cookie)).json()).not.toHaveProperty('admin');
+  });
+
+  it('donne une vue agrégée, sans aucune donnée de position ni réputation exacte', async () => {
+    const admin = await newAdmin();
+    const user = await newUser();
+    await post('/api/events', user.cookie, { type: 'GAZ_FUMEE', cell: HERE, presenceCell: HERE });
+    const overview = (await get('/api/admin/overview', admin.cookie)).json();
+    expect(overview.activeEvents).toBeGreaterThanOrEqual(1);
+    expect(overview.byType.GAZ_FUMEE).toBeGreaterThanOrEqual(1);
+    const raw = JSON.stringify(overview);
+    expect(raw).not.toContain(HERE); // cellule fine absente : seulement des zones rés. 7
+    expect(raw).not.toContain('reputation');
+  });
+
+  it("supprime un faux signalement, le retire chez les clients et pénalise son auteur", async () => {
+    const admin = await newAdmin();
+    const author = await newUser();
+    const event = (await post('/api/events', author.cookie, { type: 'INCENDIE', cell: HERE, presenceCell: HERE })).json().event;
+    await new Promise((r) => setTimeout(r, 100));
+
+    const sub = redis.duplicate();
+    if (sub.status !== 'ready') await new Promise((resolve) => sub.once('ready', resolve));
+    const received: unknown[] = [];
+    sub.on('message', (_c, m) => received.push(JSON.parse(m)));
+    await sub.subscribe(zoneChannel(zoneOf(HERE)));
+    try {
+      const res = await app.inject({
+        method: 'DELETE',
+        url: `/api/admin/events/${event.id}`,
+        headers: { cookie: admin.cookie, [CSRF_HEADER]: '1' },
+      });
+      expect(res.statusCode).toBe(204);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(received).toContainEqual({ removed: event.id });
+    } finally {
+      sub.disconnect();
+    }
+    const [row] = await sql<{ reputation_score: number }[]>`SELECT reputation_score FROM users WHERE id = ${author.id}`;
+    expect(row!.reputation_score).toBeCloseTo(0.8, 5);
+  });
+
+  it('suspend un compte : déconnexion immédiate, puis réactivation', async () => {
+    const admin = await newAdmin();
+    const target = await newUser();
+    const { pseudo } = target;
+    expect((await post('/api/admin/accounts/suspend', admin.cookie, { pseudo })).statusCode).toBe(204);
+    expect((await get('/api/me', target.cookie)).statusCode).toBe(401);
+
+    const list = (await get('/api/admin/accounts', admin.cookie)).json().accounts;
+    expect(list).toContainEqual(expect.objectContaining({ pseudo, suspended: true }));
+    expect(JSON.stringify(list)).not.toMatch(/\d\.\d/); // jamais de score chiffré
+
+    expect((await post('/api/admin/accounts/unsuspend', admin.cookie, { pseudo })).statusCode).toBe(204);
+    const [row] = await sql<{ status: string }[]>`SELECT status FROM users WHERE id = ${target.id}`;
+    expect(row!.status).toBe('active');
+  });
+
+  it("refuse de suspendre l'administrateur", async () => {
+    const admin = await newAdmin();
+    expect((await post('/api/admin/accounts/suspend', admin.cookie, { pseudo: admin.pseudo })).statusCode).toBe(400);
   });
 });
 

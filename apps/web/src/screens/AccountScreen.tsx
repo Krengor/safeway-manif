@@ -4,12 +4,14 @@ import { api, ApiRequestError } from '../lib/api';
 
 interface Props {
   pseudo: string;
+  isAdmin: boolean;
+  onModeration(): void;
   onPseudoChange(pseudo: string): void;
   onSignedOut(): void;
   onClose(): void;
 }
 
-export function AccountScreen({ pseudo, onPseudoChange, onSignedOut, onClose }: Props) {
+export function AccountScreen({ pseudo, isAdmin, onModeration, onPseudoChange, onSignedOut, onClose }: Props) {
   const [value, setValue] = useState(pseudo);
   const [message, setMessage] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -44,6 +46,12 @@ export function AccountScreen({ pseudo, onPseudoChange, onSignedOut, onClose }: 
         ← Retour à la carte
       </button>
       <h1 className="text-2xl font-bold">Compte</h1>
+
+      {isAdmin && (
+        <button type="button" onClick={onModeration} className="min-h-12 rounded-xl bg-accent px-3 text-left font-bold text-accent-fg">
+          🛡️ Modération
+        </button>
+      )}
 
       <form onSubmit={onRename} className="flex flex-col gap-2">
         <label htmlFor="new-pseudo" className="font-semibold">

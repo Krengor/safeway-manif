@@ -13,10 +13,11 @@ import { MapView, type MapViewHandle } from './map/MapView';
 import { summarizeCells } from './map/overlay';
 import { AccountScreen } from './screens/AccountScreen';
 import { AuthScreen } from './screens/AuthScreen';
+import { ModerationScreen } from './screens/ModerationScreen';
 import { PrivacyScreen } from './screens/PrivacyScreen';
 import { Tutorial, markTutorialSeen, tutorialSeen } from './screens/Tutorial';
 
-type Screen = 'map' | 'auth' | 'account' | 'privacy';
+type Screen = 'map' | 'auth' | 'account' | 'privacy' | 'moderation';
 const STALE_AFTER_MS = 45_000;
 
 /**
@@ -61,6 +62,7 @@ export function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const zoneData = useZoneEvents(zones ?? []);
   const now = Math.floor(tick / 1000) + zoneData.clockSkew;
@@ -75,7 +77,13 @@ export function App() {
   });
 
   useEffect(() => {
-    api.me().then((me) => setPseudo(me.pseudo), () => setPseudo(null));
+    api.me().then(
+      (me) => {
+        setPseudo(me.pseudo);
+        setIsAdmin(me.admin === true);
+      },
+      () => setPseudo(null),
+    );
   }, []);
 
   useEffect(() => {
@@ -394,6 +402,7 @@ export function App() {
                 setPseudo(p);
                 setScreen('map');
                 setToast(`Connecté en tant que ${p}.`);
+                api.me().then((me) => setIsAdmin(me.admin === true), () => setIsAdmin(false));
                 // Juste après le choix du pseudo : prise en main express (une seule fois).
                 if (created && !tutorialSeen()) setShowTutorial(true);
               }}
@@ -411,15 +420,19 @@ export function App() {
           {screen === 'account' && pseudo && (
             <AccountScreen
               pseudo={pseudo}
+              isAdmin={isAdmin}
+              onModeration={() => setScreen('moderation')}
               onPseudoChange={setPseudo}
               onClose={() => setScreen('map')}
               onSignedOut={() => {
                 setPseudo(null);
+                setIsAdmin(false);
                 setScreen('map');
                 setToast('Déconnecté.');
               }}
             />
           )}
+          {screen === 'moderation' && isAdmin && <ModerationScreen onClose={() => setScreen('account')} />}
         </div>
       )}
     </div>

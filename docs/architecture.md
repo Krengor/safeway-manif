@@ -123,6 +123,19 @@ PWA ──POST /api/route {from,to} (sans cookie)──► Caddy (retire Cookie)
 - Logs : méthode, route (motif, sans paramètres), code HTTP, durée, id de requête aléatoire. Ni IP, ni URL,
   ni en-têtes, ni corps.
 
+## Modération (V0.3)
+
+- Un seul rôle `admin`, attribué **uniquement en ligne de commande** sur le serveur
+  (`npm run admin -w @safeway/api -- grant <pseudo>`, en prod `docker compose exec api node dist/admin-cli.js
+  grant <pseudo>`). Aucune route ne permet de devenir administrateur.
+- Écran « 🛡️ Modération » (depuis Compte, visible seulement pour l'admin) : chiffres agrégés, signalements
+  actifs, suppression d'un faux signalement (retiré aussitôt chez tous les clients, compté comme « retiré »
+  pour la réputation de son auteur), comptes à fiabilité faible (par tranche), suspension / réactivation.
+- Suspension : toutes les sessions du compte sont détruites, la connexion est ensuite refusée.
+  L'administrateur ne peut pas se suspendre lui-même.
+- Ce que l'admin ne voit jamais (§34) : positions, adresses IP, auteur d'un signalement (lien inexistant en
+  base), score de réputation exact. Journal des actions : type d'action seulement.
+
 ## Réseau dégradé (V0.3)
 
 - **Carte hors ligne** : « Préparer la manif » (écran Confidentialité) télécharge le fichier PMTiles de la

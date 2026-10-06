@@ -65,6 +65,12 @@ premier démarrage (quelques minutes).
 Les passkeys fonctionnent sur `localhost` sans HTTPS. Pour tester sur téléphone, il faut un domaine en HTTPS
 (WebAuthn l'exige) : voir [infrastructure/README.md](infrastructure/README.md).
 
+Modération : donner le rôle administrateur à un pseudo existant (uniquement depuis le serveur) :
+
+```bash
+npm run admin -w @safeway/api -- grant <pseudo>
+```
+
 ## Qualité
 
 ```bash

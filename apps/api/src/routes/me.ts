@@ -8,9 +8,10 @@ export async function meRoutes(app: FastifyInstance, ctx: AppContext): Promise<v
 
   app.get('/me', async (request): Promise<MeResponse> => {
     const userId = await ctx.requireUser(request);
-    const [user] = await sql<{ pseudo: string }[]>`SELECT pseudo FROM users WHERE id = ${userId} AND status = 'active'`;
+    const [user] = await sql<{ pseudo: string; role: string }[]>`
+      SELECT pseudo, role FROM users WHERE id = ${userId} AND status = 'active'`;
     if (!user) throw new HttpError(401, 'unauthenticated');
-    return { pseudo: user.pseudo };
+    return user.role === 'admin' ? { pseudo: user.pseudo, admin: true } : { pseudo: user.pseudo };
   });
 
   app.patch('/me/pseudo', async (request): Promise<MeResponse> => {

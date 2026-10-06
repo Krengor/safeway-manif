@@ -11,6 +11,7 @@ import {
   REPUTATION_MIN,
   eventOutcome,
   reputationDelta,
+  type EventOutcome,
 } from '@safeway/shared';
 import type { Redis } from 'ioredis';
 import type { Sql } from '../db.js';
@@ -88,8 +89,11 @@ export class ReputationService {
     private readonly redis: Redis | null = null,
   ) {}
 
-  /** Règle des signalements arrivés à terme : crédits/pénalités, puis destruction des liens. */
-  async settle(events: readonly SettledEvent[]): Promise<number> {
+  /**
+   * Règle des signalements arrivés à terme : crédits/pénalités, puis destruction des liens.
+   * `override` : bilan imposé (suppression par la modération = signalement retiré).
+   */
+  async settle(events: readonly SettledEvent[], override?: EventOutcome): Promise<number> {
     const deltas = new Map<string, number>();
     const add = (userId: string, delta: number) => {
       if (delta !== 0) deltas.set(userId, (deltas.get(userId) ?? 0) + delta);
@@ -102,12 +106,14 @@ export class ReputationService {
       } catch {
         continue; // Redis indisponible : pas de réputation pour ce signalement.
       }
-      const outcome = eventOutcome({
-        conf: ev.confirmations,
-        inv: ev.invalidations,
-        supportW: ev.support_weight,
-        againstW: ev.against_weight,
-      });
+      const outcome =
+        override ??
+        eventOutcome({
+          conf: ev.confirmations,
+          inv: ev.invalidations,
+          supportW: ev.support_weight,
+          againstW: ev.against_weight,
+        });
       if (outcome === 'neutral') continue;
       if (participants.author) add(participants.author, reputationDelta('author', outcome));
       for (const [userId, vote] of participants.votes) {
