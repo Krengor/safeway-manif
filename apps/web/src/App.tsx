@@ -3,8 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CellSheet } from './components/CellSheet';
 import { Legend } from './components/Legend';
 import { ReportSheet } from './components/ReportSheet';
+import { RoutePanel } from './components/RoutePanel';
 import { api, ApiRequestError } from './lib/api';
 import { useManifMode } from './lib/useManifMode';
+import { useTrip } from './lib/useTrip';
 import { useZoneEvents } from './lib/useZoneEvents';
 import { MapView, type MapViewHandle } from './map/MapView';
 import { summarizeCells } from './map/overlay';
@@ -54,6 +56,8 @@ export function App() {
   const zoneData = useZoneEvents(zones ?? []);
   const now = Math.floor(tick / 1000) + zoneData.clockSkew;
   const cells = useMemo(() => summarizeCells(zoneData.events, now), [zoneData.events, now]);
+  const statusByCell = useMemo(() => new Map(cells.map((c) => [c.cell, c.status])), [cells]);
+  const trip = useTrip(manif.position, statusByCell);
 
   useEffect(() => {
     api.me().then((me) => setPseudo(me.pseudo), () => setPseudo(null));
@@ -78,15 +82,32 @@ export function App() {
   const toggleManif = useCallback(() => {
     if (manif.active) {
       manif.stop();
-      // Fin de session : on efface les données locales (§4).
+      // Fin de session : on efface les données locales (§4), trajet compris.
       zoneData.clear();
+      trip.stop();
       setReportTarget(null);
       setSelectedCell(null);
-      setToast('Mode Manif désactivé — position effacée.');
+      setToast('Mode Manif désactivé — position et trajet effacés.');
     } else {
       manif.start();
     }
-  }, [manif, zoneData]);
+  }, [manif, zoneData, trip]);
+
+  // Localisation coupée (désactivation, refus du GPS…) : le trajet n'a plus de sens
+  // et ne doit pas rester en mémoire.
+  const stopTrip = trip.stop;
+  useEffect(() => {
+    if (!manif.active) stopTrip();
+  }, [manif.active, stopTrip]);
+
+  const openTrip = () => {
+    if (!manif.position) {
+      if (!manif.active) manif.start();
+      setToast('Activez le Mode Manif : la position de départ est nécessaire.');
+      return;
+    }
+    trip.startPicking();
+  };
 
   const requireAccount = (reason: string): boolean => {
     if (pseudo) return true;
@@ -182,9 +203,12 @@ export function App() {
         cells={cells}
         position={manif.position}
         dark={dark}
+        route={trip.route ? { shape: trip.route.shape, risk: trip.route.risk } : null}
+        destination={trip.destination}
         onZonesChange={setZones}
         onSelectCell={setSelectedCell}
         onLongPress={onLongPress}
+        onTap={(point) => trip.picking && trip.chooseDestination(point)}
       />
 
       {/* En-tête */}
@@ -233,6 +257,14 @@ export function App() {
             Données non actualisées depuis {staleMinutes} min.
           </p>
         )}
+        {trip.picking && (
+          <div role="status" className="pointer-events-auto flex items-center gap-2 rounded-xl bg-accent px-3 py-2 font-semibold text-accent-fg shadow-lg">
+            <span className="flex-1">🧭 Touchez votre destination sur la carte.</span>
+            <button type="button" onClick={trip.cancelPicking} className="rounded-lg px-2 py-1 underline">
+              Annuler
+            </button>
+          </div>
+        )}
         {zones === null && (
           <p role="status" className="pointer-events-auto self-center rounded-xl bg-panel/95 px-3 py-2 text-sm font-semibold shadow">
             Zoomez pour voir les signalements.
@@ -242,7 +274,19 @@ export function App() {
       </header>
 
       {/* Barre d'actions — utilisable au pouce */}
-      <nav className="safe-bottom absolute inset-x-0 bottom-0 z-10 flex items-end gap-2 px-3" aria-label="Actions">
+      <nav className="safe-bottom absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 px-3" aria-label="Actions">
+        {trip.destination && (
+          <RoutePanel
+            route={trip.route}
+            loading={trip.loading}
+            error={trip.error}
+            alertCount={trip.alertCount}
+            canRecompute={trip.canRecompute}
+            onRecompute={trip.recompute}
+            onStop={trip.stop}
+          />
+        )}
+        <div className="flex items-end gap-2">
         <button
           type="button"
           onClick={openReport}
@@ -252,11 +296,13 @@ export function App() {
         </button>
         <button
           type="button"
-          disabled
-          title="Itinéraire : disponible en V0.2"
-          className="min-h-16 flex-1 rounded-2xl bg-panel text-lg font-bold opacity-60 shadow-lg"
+          onClick={openTrip}
+          aria-pressed={trip.active}
+          className={`min-h-16 flex-1 rounded-2xl text-lg font-bold shadow-lg active:scale-[0.98] ${
+            trip.active ? 'bg-accent text-accent-fg' : 'bg-panel'
+          }`}
         >
-          🧭 Trajet <span className="block text-xs font-semibold">bientôt</span>
+          🧭 {trip.destination ? 'Nouvelle destination' : 'Trajet'}
         </button>
         {manif.position && (
           <button
@@ -268,6 +314,7 @@ export function App() {
             ◎
           </button>
         )}
+        </div>
       </nav>
 
       {toast && (

@@ -75,3 +75,4 @@ jobs:
       - run: docker build -f infrastructure/docker/api.Dockerfile -t safeway-api:ci .
       - run: docker build -f infrastructure/docker/web.Dockerfile -t safeway-web:ci .
       - run: docker build -f infrastructure/docker/gateway.Dockerfile -t safeway-gateway:ci .
+      - run: docker build -f infrastructure/docker/routing.Dockerfile -t safeway-routing:ci .

@@ -43,3 +43,6 @@ Thumbs.db
 
 # Documents de travail privés (hors dépôt public)
 SAFEWAY_MANIF_CAHIER_DES_CHARGES*.md
+
+# Données Valhalla (OSM + graphe construit)
+infrastructure/valhalla/custom_files/

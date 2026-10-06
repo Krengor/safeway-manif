@@ -47,5 +47,21 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
 
+  # Moteur d'itinéraire piéton. Au premier démarrage, construit le graphe à partir du
+  # fichier .osm.pbf placé dans infrastructure/valhalla/custom_files (quelques minutes).
+  valhalla:
+    image: ghcr.io/valhalla/valhalla-scripted:latest
+    environment:
+      use_tiles_ignore_pbf: "True"
+      build_elevation: "False"
+      build_admins: "True"
+      build_time_zones: "False"
+      serve_tiles: "True"
+      server_threads: "2"
+    ports:
+      - "127.0.0.1:8002:8002"
+    volumes:
+      - ../valhalla/custom_files:/custom_files
+
 volumes:
   pgdata:
