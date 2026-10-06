@@ -2,6 +2,9 @@ import {
   API_PREFIX,
   CSRF_HEADER,
   ROUTE_PATH,
+  type AdminAccountsResponse,
+  type AdminEventsResponse,
+  type AdminOverview,
   type RouteResponse,
   type ApiError,
   type CreateEventBody,
@@ -79,6 +82,15 @@ export const api = {
     request<VoteResponse>('POST', `/events/${encodeURIComponent(id)}/confirm`, { presenceCell }),
   invalidate: (id: string, presenceCell: string) =>
     request<VoteResponse>('POST', `/events/${encodeURIComponent(id)}/invalidate`, { presenceCell }),
+
+  admin: {
+    overview: () => request<AdminOverview>('GET', '/admin/overview'),
+    events: () => request<AdminEventsResponse>('GET', '/admin/events'),
+    removeEvent: (id: string) => request<void>('DELETE', `/admin/events/${encodeURIComponent(id)}`),
+    accounts: () => request<AdminAccountsResponse>('GET', '/admin/accounts'),
+    suspend: (pseudo: string) => request<void>('POST', '/admin/accounts/suspend', { pseudo }),
+    unsuspend: (pseudo: string) => request<void>('POST', '/admin/accounts/unsuspend', { pseudo }),
+  },
 
   /** Itinéraire : coordonnées précises indispensables, mais requête anonyme et jamais conservée. */
   route: (from: [number, number], to: [number, number]) =>

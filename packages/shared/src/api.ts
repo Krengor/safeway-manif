@@ -79,6 +79,42 @@ export interface MapStatusResponse {
 
 export interface MeResponse {
   pseudo: string;
+  /** Présent et vrai uniquement pour l'administrateur. */
+  admin?: true;
+}
+
+// --- Modération (§22) ----------------------------------------------------------------
+// Ce que l'administrateur voit est volontairement limité (§34) : aucune position, aucune IP,
+// aucun lien auteur ↔ signalement (il n'existe pas en base), réputation par tranche seulement.
+
+export const accountActionSchema = z.object({ pseudo: pseudoSchema });
+
+export interface AdminOverview {
+  now: number;
+  activeEvents: number;
+  byType: Partial<Record<(typeof EVENT_TYPES)[number], number>>;
+  activeZones: number;
+  /** Zones (H3 rés. 7) les plus actives — données déjà publiques. */
+  topZones: { zone: string; events: number }[];
+  accounts: number;
+  suspended: number;
+  lowReliability: number;
+}
+
+export interface AdminEventsResponse {
+  events: (PublicEvent & { zone: string })[];
+}
+
+export type Reliability = 'faible' | 'très faible';
+
+export interface AdminAccount {
+  pseudo: string;
+  reliability: Reliability;
+  suspended: boolean;
+}
+
+export interface AdminAccountsResponse {
+  accounts: AdminAccount[];
 }
 
 export interface VoteResponse {

@@ -21,7 +21,8 @@ import { healthRoutes } from './routes/health.js';
 import { mapRoutes } from './routes/map.js';
 import { meRoutes } from './routes/me.js';
 import { EventService } from './services/events.js';
-import { RedisReputationLinks } from './services/reputation.js';
+import { RedisReputationLinks, ReputationService } from './services/reputation.js';
+import { adminRoutes } from './routes/admin.js';
 
 export interface AppContext {
   config: Config;
@@ -30,6 +31,7 @@ export interface AppContext {
   sessions: SessionStore;
   limiter: RateLimiter;
   events: EventService;
+  reputation: ReputationService;
   sessionCookie: string;
   sessionTtl: number;
   cookieOptions: CookieSerializeOptions;
@@ -70,6 +72,7 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
   };
 
   const sessions = new SessionStore(redis);
+  const reputationLinks = new RedisReputationLinks(redis);
   const ctx: AppContext = {
     config,
     sql,
@@ -78,8 +81,9 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
     limiter: new RateLimiter(redis, config.RATE_LIMIT_SECRET),
     events: new EventService(sql, config.VOTE_TOKEN_SECRET, {
       bus: new RedisBus(redis),
-      links: new RedisReputationLinks(redis),
+      links: reputationLinks,
     }),
+    reputation: new ReputationService(sql, reputationLinks, redis),
     sessionCookie,
     sessionTtl: SESSION_TTL_SECONDS,
     cookieOptions,
@@ -136,6 +140,7 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
       await meRoutes(api, ctx);
       await mapRoutes(api, ctx);
       await eventRoutes(api, ctx);
+      await adminRoutes(api, ctx);
     },
     { prefix: API_PREFIX },
   );
