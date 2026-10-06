@@ -6,7 +6,7 @@
  * de statut ressortent nettement.
  */
 import { layers, namedFlavor } from '@protomaps/basemaps';
-import type { StyleSpecification } from 'maplibre-gl';
+import type { StyleSpecification } from '@maplibre/maplibre-gl-style-spec';
 
 export const BASEMAP_SOURCE = 'protomaps';
 export const TILES_URL: string = import.meta.env.VITE_PMTILES_URL ?? '/tiles/basemap.pmtiles';
