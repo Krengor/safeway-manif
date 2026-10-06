@@ -1,0 +1,106 @@
+@import 'tailwindcss';
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+/*
+ * Palette pensée pour l'extérieur (forte luminosité) et le daltonisme :
+ * les statuts sont toujours doublés d'une icône et d'un texte (§25).
+ */
+@theme {
+  --color-ok: #15803d;
+  --color-warn: #c2410c;
+  --color-danger: #b91c1c;
+  --color-unknown: #6b7280;
+  --color-bg: #ffffff;
+  --color-fg: #0b0d10;
+  --color-panel: #ffffff;
+  --color-muted: #4b5563;
+  --color-line: #d1d5db;
+  --color-accent: #0b0d10;
+  --color-accent-fg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-ok: #22c55e;
+    --color-warn: #fb923c;
+    --color-danger: #f87171;
+    --color-unknown: #9ca3af;
+    --color-bg: #0b0d10;
+    --color-fg: #f9fafb;
+    --color-panel: #15181d;
+    --color-muted: #9ca3af;
+    --color-line: #2a2f37;
+    --color-accent: #f9fafb;
+    --color-accent-fg: #0b0d10;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.safe-top {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+/* Marqueurs de zone : icône + libellé, jamais la couleur seule. */
+.sw-marker {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem 0.2rem 0.35rem;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  background: var(--color-panel);
+  font: 600 0.8rem/1.2 system-ui, sans-serif;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+.sw-marker[data-status='red'] { color: var(--color-danger); }
+.sw-marker[data-status='orange'] { color: var(--color-warn); }
+.sw-marker[data-status='green'] { color: var(--color-ok); }
+.sw-marker[data-status='grey'] { color: var(--color-unknown); }
+.sw-marker .sw-marker-label { color: var(--color-fg); }
+.sw-marker .sw-marker-count {
+  min-width: 1.1rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: currentColor;
+  text-align: center;
+}
+.sw-marker .sw-marker-count > span { color: var(--color-panel); }
+
+/* L'attribution OSM reste visible au-dessus de la barre d'actions. */
+.maplibregl-ctrl-bottom-right,
+.maplibregl-ctrl-bottom-left {
+  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

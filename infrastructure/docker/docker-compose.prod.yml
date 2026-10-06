@@ -1,0 +1,79 @@
+# Déploiement mono-serveur de référence (V0.1). La cible 500k (§47-60) nécessite une
+# architecture multi-instances : voir docs/architecture.md.
+#
+#   docker compose --env-file .env.prod -f infrastructure/docker/docker-compose.prod.yml up -d --build
+name: safeway
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: safeway
+      POSTGRES_USER: safeway
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    command: ["postgres", "-c", "log_statement=none", "-c", "log_min_duration_statement=-1", "-c", "log_connections=off"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # placer ce volume sur un disque chiffré (§16.2)
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U safeway -d safeway"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?}", "--save", "", "--appendonly", "no",
+              "--maxmemory", "512mb", "--maxmemory-policy", "volatile-ttl"]
+    networks: [backend]
+
+  migrate:
+    build: { context: ../.., dockerfile: infrastructure/docker/api.Dockerfile }
+    command: ["node", "dist/migrate-cli.js"]
+    environment:
+      DATABASE_URL: postgres://safeway:${POSTGRES_PASSWORD}@postgres:5432/safeway
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [backend]
+    restart: "no"
+
+  api:
+    build: { context: ../.., dockerfile: infrastructure/docker/api.Dockerfile }
+    restart: unless-stopped
+    environment:
+      PUBLIC_ORIGIN: https://${SAFEWAY_DOMAIN:?}
+      WEBAUTHN_RP_ID: ${SAFEWAY_DOMAIN}
+      DATABASE_URL: postgres://safeway:${POSTGRES_PASSWORD}@postgres:5432/safeway
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      VOTE_TOKEN_SECRET: ${VOTE_TOKEN_SECRET:?}
+      RATE_LIMIT_SECRET: ${RATE_LIMIT_SECRET:?}
+      TRUST_PROXY_HOPS: 1
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_started }
+    networks: [backend]
+
+  web:
+    build: { context: ../.., dockerfile: infrastructure/docker/web.Dockerfile }
+    restart: unless-stopped
+    environment:
+      SAFEWAY_DOMAIN: ${SAFEWAY_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ../../apps/web/public/tiles:/srv/map/tiles:ro
+      - ../../apps/web/public/fonts:/srv/map/fonts:ro
+      - ../../apps/web/public/sprites:/srv/map/sprites:ro
+      - caddy_data:/data
+    depends_on: [api]
+    networks: [backend]
+
+networks:
+  backend:
+
+volumes:
+  pgdata:
+  caddy_data:

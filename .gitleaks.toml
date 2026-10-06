@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Valeurs factices de la CI et des exemples"
+regexes = ['''ci-only-[a-z-]+[0-9a-f]*''', '''CHANGE_ME[A-Z_]*''']
