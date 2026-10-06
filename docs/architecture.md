@@ -91,8 +91,26 @@ PWA ──POST /api/route {from,to} (sans cookie)──► Caddy (retire Cookie)
 - Passage libre confirmé (confiance ≥ 0,5, donc ≥ 2 personnes) → **vert**.
 - Tout le reste (contesté, faible, vigilance) → **orange**. Aucune info → **gris**. Le danger prime toujours.
 
-La réputation des auteurs (§21) n'est pas encore intégrée : elle nécessite de relier un événement à son auteur
-de façon éphémère (piste : Redis avec TTL = durée de vie de l'événement). Prévu en V0.2.
+### Réputation (V0.2)
+
+- Chaque vote pèse la réputation de son auteur (0,25 à 2, neutre = 1). Les seuils « au moins N personnes »
+  restent comptés en personnes ; l'accord et le retrait utilisent les poids.
+- À l'expiration, chaque signalement est « réglé » : confirmé (≥ 3 personnes, non contesté) → auteur +0,1,
+  confirmateurs +0,03, invalidateurs −0,05 ; retiré par la communauté → auteur −0,2, confirmateurs −0,05,
+  invalidateurs +0,05 ; sinon rien.
+- Le lien auteur/votants ↔ signalement est écrit **uniquement dans Redis** (TTL 3 h) et détruit au règlement.
+  `DELETE … RETURNING` garantit qu'un signalement n'est réglé qu'une fois, même avec plusieurs instances.
+- Toutes les heures (une instance, verrou Redis), chaque score se rapproche de 1 (×0,99 de l'écart) et les
+  écarts < 0,01 sont remis exactement à 1 : pas de trace durable d'activité ni de date.
+- Le score n'est jamais exposé (ni API, ni interface) et disparaît avec le compte.
+
+### Anti-spam par compte
+
+- Un même compte ne peut ni gonfler un signalement (un doublon devient une confirmation, un seul vote par
+  compte et par signalement), ni en créer en rafale : 1 nouveau signalement / 15 s, 5 / 10 min, et 2 / 10 min
+  si sa réputation est basse (< 0,65, soit ~2 signalements retirés par la communauté).
+- Confirmer un danger déjà signalé ne compte pas comme une création (quota de votes : 60 / 10 min).
+- Compteurs Redis à clés pseudonymisées (HMAC), expirant avec leur fenêtre.
 
 ## Sécurité applicative
 

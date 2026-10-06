@@ -49,6 +49,9 @@ export interface PublicEvent {
   cell: string;
   conf: number;
   inv: number;
+  /** Poids cumulés (réputations) des confirmations / invalidations — anonymes. */
+  supportW: number;
+  againstW: number;
   /** Epoch secondes. */
   createdAt: number;
   lastConfAt: number;

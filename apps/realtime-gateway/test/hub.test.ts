@@ -36,6 +36,8 @@ const ev = (id: string, rev: number): PublicEvent => ({
   cell: '8a1f82880b9ffff',
   conf: rev,
   inv: 0,
+  supportW: rev,
+  againstW: 0,
   createdAt: 0,
   lastConfAt: 0,
   expiresAt: 9e9,

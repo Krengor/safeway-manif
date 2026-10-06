@@ -76,7 +76,7 @@ Les tests d'API tournent sur une vraie base PostgreSQL/Redis (celle de `npm run 
 ## Feuille de route
 
 - **V0.1** (en cours) — compte pseudo + passkey, carte, Mode Manif, signalements, confirmations, expiration, couleur des rues
-- **V0.2** — temps réel (gateway WebSocket par zone H3) ✅, routage sécurisé ✅, alertes sur trajet ✅, réputation
+- **V0.2** — temps réel (gateway WebSocket par zone H3) ✅, routage sécurisé ✅, alertes sur trajet ✅, réputation ✅
 - **V0.3** — anti-abus avancé, réseau dégradé, modération, tests de charge 500k
 
 Aucune mention « supporte 500 000 utilisateurs » ne sera faite sans rapport de charge publié dans

@@ -10,6 +10,9 @@ pourrait en tirer.
 | Pseudo | PostgreSQL `users` | jusqu'à suppression du compte | liste de pseudos |
 | Clé publique passkey | PostgreSQL `credentials` | jusqu'à suppression du compte | inexploitable pour s'authentifier |
 | Date de création du compte | PostgreSQL, au jour près | jusqu'à suppression du compte | faible |
+| Réputation (un nombre entre 0,25 et 2) | PostgreSQL `users.reputation_score` | revient vers 1 (demi-vie ≈ 3 jours), supprimée avec le compte | un compte éloigné de 1 a été actif ces derniers jours ; ni date, ni lieu, ni historique |
+| Lien auteur / votants ↔ signalement (pour la réputation) | Redis `rep:a:*`, `rep:v:*` | jusqu'au règlement du signalement (≤ 3 h, en pratique quelques minutes) | qui a signalé/voté quoi **pendant la durée de vie du signalement** ; jamais écrit en base ni sauvegardé |
+| Poids des votes | PostgreSQL `events.support_weight`, `event_votes.weight` | idem événement | aucune (nombres agrégés, sans identité) |
 | Signalement (type, cellule, horodatages, compteurs) | PostgreSQL `events` | expiration (10-60 min) + ≤ 1 min | carte publique des dernières minutes, sans auteur |
 | Jeton de vote `HMAC(secret, user:event)` | PostgreSQL `event_votes` | idem événement | avec `VOTE_TOKEN_SECRET` : savoir si un compte donné a voté sur un événement **actif** |
 | Session | Redis, `sha256(jeton) → user_id` | 30 jours glissants | aucune session utilisable (seule l'empreinte est stockée) |

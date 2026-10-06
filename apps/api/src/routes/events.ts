@@ -2,7 +2,7 @@ import { createEventSchema, isNear, voteSchema, type PublicEvent, type VoteRespo
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError, parse } from '../lib/http.js';
-import { RATE_RULES } from '../lib/rateLimit.js';
+import { LOW_REPUTATION_THRESHOLD, RATE_RULES } from '../lib/rateLimit.js';
 import type { AppContext } from '../server.js';
 import type { Vote } from '../services/events.js';
 
@@ -21,7 +21,19 @@ export async function eventRoutes(app: FastifyInstance, ctx: AppContext): Promis
     const userId = await ctx.requireUser(request);
     const body = parse(createEventSchema, request.body);
     if (!isNear(body.presenceCell, body.cell)) throw TOO_FAR();
-    await limiter.consume(RATE_RULES.report, `u:${userId}`);
+
+    // Anti-spam par compte : seule la CRÉATION est limitée strictement ; signaler un
+    // danger déjà actif revient à le confirmer (un seul vote par compte, quota de votes).
+    const subject = `u:${userId}`;
+    if (await events.isActive(body.cell, body.type)) {
+      await limiter.consume(RATE_RULES.vote, subject);
+    } else {
+      await limiter.consume(RATE_RULES.reportBurst, subject);
+      await limiter.consume(RATE_RULES.report, subject);
+      if ((await events.reputationOf(userId)) < LOW_REPUTATION_THRESHOLD) {
+        await limiter.consume(RATE_RULES.reportLowReputation, subject);
+      }
+    }
 
     const result = await events.report(userId, body.type, body.cell);
     reply.code(result.created ? 201 : 200);
