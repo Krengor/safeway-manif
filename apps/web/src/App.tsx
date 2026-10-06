@@ -190,7 +190,7 @@ export function App() {
       {/* En-tête */}
       <header className="safe-top pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col gap-2 px-3">
         <div className="pointer-events-auto flex items-center gap-1.5 rounded-2xl bg-panel/95 p-2 shadow-lg">
-          <span className="truncate pl-1 text-sm font-black tracking-tight">SAFEWAY</span>
+          <span className="truncate pl-1 text-sm font-black tracking-tight max-[359px]:hidden">SAFEWAY</span>
           <button
             type="button"
             role="switch"

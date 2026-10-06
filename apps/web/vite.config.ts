@@ -47,6 +47,8 @@ export default defineConfig({
       'Referrer-Policy': 'no-referrer',
     },
   },
+  // Le worker MapLibre 6 est un module ES : on le garde en ES une fois empaqueté.
+  worker: { format: 'es' },
   build: {
     target: 'es2022',
     sourcemap: false,

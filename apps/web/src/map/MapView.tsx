@@ -1,17 +1,22 @@
 import { EVENT_META, MAX_ZONES_PER_REQUEST, ZONE_RES } from '@safeway/shared';
 import { POLYGON_TO_CELLS_FLAGS, cellToLatLng, polygonToCellsExperimental } from 'h3-js';
-import maplibregl, { type GeoJSONSource, type Map as MlMap } from 'maplibre-gl';
+import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec';
+import { Map as MlMap, Marker, addProtocol, setWorkerUrl, type GeoJSONSource } from 'maplibre-gl';
+// MapLibre 6 charge son worker (module ES) depuis un fichier séparé : Vite l'empaquette
+// avec ses dépendances et le sert depuis notre origine (compatible CSP worker-src 'self').
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { Protocol } from 'pmtiles';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import type { LocalPosition } from '../lib/useManifMode';
 import { cellPolygons, streetSegments, type CellSummary } from './overlay';
 import { BASEMAP_SOURCE, DEFAULT_CENTER, DEFAULT_ZOOM, buildStyle } from './style';
 
-let protocolRegistered = false;
-function ensurePmtilesProtocol() {
-  if (protocolRegistered) return;
-  maplibregl.addProtocol('pmtiles', new Protocol().tile);
-  protocolRegistered = true;
+let initialized = false;
+function initMapLibre() {
+  if (initialized) return;
+  setWorkerUrl(workerUrl);
+  addProtocol('pmtiles', new Protocol().tile);
+  initialized = true;
 }
 
 const STATUS_COLORS = {
@@ -37,7 +42,7 @@ interface Props {
   onLongPress(lngLat: { lng: number; lat: number }): void;
 }
 
-function statusColor(dark: boolean): maplibregl.ExpressionSpecification {
+function statusColor(dark: boolean): ExpressionSpecification {
   const c = STATUS_COLORS[dark ? 'dark' : 'light'];
   return ['match', ['get', 'status'], 'red', c.red, 'orange', c.orange, 'green', c.green, c.grey];
 }
@@ -109,7 +114,7 @@ function addOverlayLayers(map: MlMap, dark: boolean) {
 export const MapView = forwardRef<MapViewHandle, Props>(function MapView(props, ref) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
-  const markers = useRef(new Map<string, maplibregl.Marker>());
+  const markers = useRef(new Map<string, Marker>());
   const scheduleStreets = useRef<() => void>(() => {});
   const latest = useRef(props);
   latest.current = props;
@@ -123,8 +128,8 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(props, 
 
   // Initialisation unique de la carte.
   useEffect(() => {
-    ensurePmtilesProtocol();
-    const map = new maplibregl.Map({
+    initMapLibre();
+    const map = new MlMap({
       container: container.current!,
       style: buildStyle(latest.current.dark),
       center: DEFAULT_CENTER,
@@ -224,7 +229,7 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(props, 
           latest.current.onSelectCell(cell);
         });
         const [lat, lng] = cellToLatLng(cell);
-        marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
+        marker = new Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
         markers.current.set(cell, marker);
       }
       const el = marker.getElement();
