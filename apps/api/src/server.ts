@@ -21,6 +21,7 @@ import { healthRoutes } from './routes/health.js';
 import { mapRoutes } from './routes/map.js';
 import { meRoutes } from './routes/me.js';
 import { EventService } from './services/events.js';
+import { RedisReputationLinks } from './services/reputation.js';
 
 export interface AppContext {
   config: Config;
@@ -75,7 +76,10 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
     redis,
     sessions,
     limiter: new RateLimiter(redis, config.RATE_LIMIT_SECRET),
-    events: new EventService(sql, config.VOTE_TOKEN_SECRET, new RedisBus(redis)),
+    events: new EventService(sql, config.VOTE_TOKEN_SECRET, {
+      bus: new RedisBus(redis),
+      links: new RedisReputationLinks(redis),
+    }),
     sessionCookie,
     sessionTtl: SESSION_TTL_SECONDS,
     cookieOptions,

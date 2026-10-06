@@ -14,14 +14,26 @@ export interface RateRule {
   name: string;
   limit: number;
   windowSeconds: number;
+  /** Message affiché à l'utilisateur quand la limite est atteinte. */
+  message?: string;
 }
+
+const TOO_FAST = 'Vous signalez trop vite : attendez un peu avant un nouveau signalement.';
 
 export const RATE_RULES = {
   auth: { name: 'auth', limit: 30, windowSeconds: 600 },
-  report: { name: 'report', limit: 10, windowSeconds: 600 },
+  // Anti-spam par compte (§20) — uniquement pour la CRÉATION de signalements ;
+  // confirmer un signalement existant relève de la règle `vote`.
+  reportBurst: { name: 'report-burst', limit: 1, windowSeconds: 15, message: TOO_FAST },
+  report: { name: 'report', limit: 5, windowSeconds: 600, message: TOO_FAST },
+  /** Compte dont les signalements ont souvent été invalidés : quota réduit. */
+  reportLowReputation: { name: 'report-low', limit: 2, windowSeconds: 600, message: TOO_FAST },
   vote: { name: 'vote', limit: 60, windowSeconds: 600 },
   read: { name: 'read', limit: 600, windowSeconds: 60 },
 } as const satisfies Record<string, RateRule>;
+
+/** En dessous, le quota réduit s'applique (≈ 2 signalements retirés sans compensation). */
+export const LOW_REPUTATION_THRESHOLD = 0.65;
 
 export class RateLimiter {
   private readonly memory = new Map<string, { count: number; resetAt: number }>();
@@ -44,7 +56,7 @@ export class RateLimiter {
       count = this.consumeInMemory(key, rule);
     }
     if (count > rule.limit) {
-      throw new HttpError(429, 'rate_limited', 'Trop de requêtes, réessayez dans quelques minutes.');
+      throw new HttpError(429, 'rate_limited', rule.message ?? 'Trop de requêtes, réessayez dans quelques minutes.');
     }
   }
 
