@@ -44,7 +44,7 @@ jobs:
       RATE_LIMIT_SECRET: ci-only-rate-secret-0123456789abcdef
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
