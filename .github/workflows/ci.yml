@@ -43,7 +43,7 @@ jobs:
       VOTE_TOKEN_SECRET: ci-only-vote-secret-0123456789abcdef
       RATE_LIMIT_SECRET: ci-only-rate-secret-0123456789abcdef
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -60,7 +60,7 @@ jobs:
     name: Scan de secrets
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v2
@@ -71,6 +71,6 @@ jobs:
     name: Build des images
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: docker build -f infrastructure/docker/api.Dockerfile -t safeway-api:ci .
       - run: docker build -f infrastructure/docker/web.Dockerfile -t safeway-web:ci .
