@@ -2,7 +2,7 @@
 #   docker build -f infrastructure/docker/web.Dockerfile -t safeway-web .
 # Les tuiles, polices et sprites ne sont pas dans l'image : monter /srv/map (voir docker-compose.prod.yml).
 
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
