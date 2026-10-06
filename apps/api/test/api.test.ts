@@ -292,6 +292,18 @@ describe('temps réel', () => {
 });
 
 describe('anti-spam par compte', () => {
+  it("plafonne l'authentification par IP, sans IP en clair dans Redis", async () => {
+    const codes: number[] = [];
+    for (let i = 0; i < 31; i++) codes.push((await app.inject({ method: 'GET', url: '/api/auth/pow' })).statusCode);
+    expect(codes.slice(0, 30).every((c) => c === 200)).toBe(true);
+    const blocked = await app.inject({ method: 'GET', url: '/api/auth/pow' });
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json().error).toBe('rate_limited');
+    const keys = await redis.keys('rl:route:*');
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.join()).not.toContain('127.0.0.1');
+  });
+
   it('refuse un second nouveau signalement immédiat du même compte', async () => {
     const user = await newUser();
     const first = await post('/api/events', user.cookie, { type: 'FOULE_DENSE', cell: HERE, presenceCell: HERE });
