@@ -13,6 +13,7 @@ import { summarizeCells } from './map/overlay';
 import { AccountScreen } from './screens/AccountScreen';
 import { AuthScreen } from './screens/AuthScreen';
 import { PrivacyScreen } from './screens/PrivacyScreen';
+import { Tutorial, markTutorialSeen, tutorialSeen } from './screens/Tutorial';
 
 type Screen = 'map' | 'auth' | 'account' | 'privacy';
 const STALE_AFTER_MS = 45_000;
@@ -52,6 +53,7 @@ export function App() {
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const zoneData = useZoneEvents(zones ?? []);
   const now = Math.floor(tick / 1000) + zoneData.clockSkew;
@@ -338,20 +340,39 @@ export function App() {
         />
       )}
 
+      {showTutorial && (
+        <Tutorial
+          onClose={() => {
+            markTutorialSeen();
+            setShowTutorial(false);
+          }}
+        />
+      )}
+
       {screen !== 'map' && (
         <div className="absolute inset-0 z-50 overflow-y-auto bg-bg">
           {screen === 'auth' && (
             <AuthScreen
               reason={authReason}
               onCancel={() => setScreen('map')}
-              onDone={(p) => {
+              onDone={(p, created) => {
                 setPseudo(p);
                 setScreen('map');
                 setToast(`Connecté en tant que ${p}.`);
+                // Juste après le choix du pseudo : prise en main express (une seule fois).
+                if (created && !tutorialSeen()) setShowTutorial(true);
               }}
             />
           )}
-          {screen === 'privacy' && <PrivacyScreen onClose={() => setScreen('map')} />}
+          {screen === 'privacy' && (
+            <PrivacyScreen
+              onClose={() => setScreen('map')}
+              onShowTutorial={() => {
+                setScreen('map');
+                setShowTutorial(true);
+              }}
+            />
+          )}
           {screen === 'account' && pseudo && (
             <AccountScreen
               pseudo={pseudo}

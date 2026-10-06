@@ -3,14 +3,22 @@ const SOURCE_URL = 'https://github.com/Krengor/safeway-manif';
 
 interface Props {
   onClose(): void;
+  onShowTutorial(): void;
 }
 
 /** Écran « Confidentialité » (§37) : ce que l'app fait, ne fait pas, et ses limites. */
-export function PrivacyScreen({ onClose }: Props) {
+export function PrivacyScreen({ onClose, onShowTutorial }: Props) {
   return (
     <main className="safe-top safe-bottom mx-auto flex min-h-full max-w-md flex-col gap-5 px-4">
       <button type="button" onClick={onClose} className="self-start py-2 font-semibold text-muted">
         ← Retour à la carte
+      </button>
+      <button
+        type="button"
+        onClick={onShowTutorial}
+        className="min-h-12 rounded-xl border-2 border-line px-3 text-left font-bold"
+      >
+        💡 Comment ça marche ? Revoir la prise en main
       </button>
       <h1 className="text-2xl font-bold">Confidentialité</h1>
 
