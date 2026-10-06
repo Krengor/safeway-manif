@@ -1,0 +1,34 @@
+{
+  "name": "safeway-manif",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Navigation collaborative de sécurité piétonne pendant les manifestations — anonyme, éphémère, sans historique de déplacement.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:infra": "docker compose --env-file .env -f infrastructure/docker/docker-compose.dev.yml up -d --wait",
+    "dev:infra:down": "docker compose --env-file .env -f infrastructure/docker/docker-compose.dev.yml down",
+    "dev:api": "npm run dev -w @safeway/api",
+    "dev:web": "npm run dev -w @safeway/web",
+    "migrate": "npm run migrate -w @safeway/api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.37.0",
+    "eslint": "^9.37.0",
+    "globals": "^16.4.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.0",
+    "vitest": "^3.2.4"
+  }
+}

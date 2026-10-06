@@ -1,0 +1,54 @@
+import { createEventSchema, isNear, voteSchema, type PublicEvent, type VoteResponse } from '@safeway/shared';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
+import { HttpError, parse } from '../lib/http.js';
+import { RATE_RULES } from '../lib/rateLimit.js';
+import type { AppContext } from '../server.js';
+import type { Vote } from '../services/events.js';
+
+const idSchema = z.uuid();
+
+const TOO_FAR = () => new HttpError(403, 'too_far', 'Vous devez être à proximité de la zone.');
+
+export async function eventRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
+  const { events, limiter } = ctx;
+
+  /**
+   * Création d'un signalement. `presenceCell` sert uniquement à la vérification de
+   * proximité ci-dessous : elle n'est ni stockée, ni journalisée, ni renvoyée.
+   */
+  app.post('/events', async (request, reply): Promise<{ event: PublicEvent; created: boolean }> => {
+    const userId = await ctx.requireUser(request);
+    const body = parse(createEventSchema, request.body);
+    if (!isNear(body.presenceCell, body.cell)) throw TOO_FAR();
+    await limiter.consume(RATE_RULES.report, `u:${userId}`);
+
+    const result = await events.report(userId, body.type, body.cell);
+    reply.code(result.created ? 201 : 200);
+    return result;
+  });
+
+  app.get<{ Params: { id: string } }>('/events/:id', async (request) => {
+    const id = parse(idSchema, request.params.id);
+    const event = await events.get(id);
+    if (!event) throw new HttpError(404, 'not_found');
+    return { event };
+  });
+
+  const voteHandler = (vote: Vote) =>
+    async function (request: FastifyRequest<{ Params: { id: string } }>): Promise<VoteResponse> {
+      const userId = await ctx.requireUser(request);
+      const id = parse(idSchema, request.params.id);
+      const { presenceCell } = parse(voteSchema, request.body);
+
+      const cell = await events.cellOf(id);
+      if (!cell) throw new HttpError(404, 'not_found', "Ce signalement n'est plus actif.");
+      if (!isNear(presenceCell, cell)) throw TOO_FAR();
+      await limiter.consume(RATE_RULES.vote, `u:${userId}`);
+
+      return { event: await events.vote(userId, id, vote) };
+    };
+
+  app.post<{ Params: { id: string } }>('/events/:id/confirm', voteHandler(1));
+  app.post<{ Params: { id: string } }>('/events/:id/invalidate', voteHandler(-1));
+}

@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/dev-dist
+.git
+.tools
+.env
+.env.*
+!.env.example
+apps/web/public/tiles
+apps/web/public/fonts
+apps/web/public/sprites
+**/*.pem
+**/*.key

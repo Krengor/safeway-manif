@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, types, tests, build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_DB: safeway
+          POSTGRES_USER: safeway
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U safeway -d safeway"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      # Valeurs propres à la CI, sans aucune valeur de production.
+      NODE_ENV: test
+      PUBLIC_ORIGIN: http://localhost:5173
+      WEBAUTHN_RP_ID: localhost
+      DATABASE_URL: postgres://safeway:ci-only-password@localhost:5432/safeway
+      REDIS_URL: redis://localhost:6379
+      VOTE_TOKEN_SECRET: ci-only-vote-secret-0123456789abcdef
+      RATE_LIMIT_SECRET: ci-only-rate-secret-0123456789abcdef
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Audit des dépendances (production)
+        run: npm audit --omit=dev --audit-level=high
+
+  secrets:
+    name: Scan de secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    name: Build des images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -f infrastructure/docker/api.Dockerfile -t safeway-api:ci .
+      - run: docker build -f infrastructure/docker/web.Dockerfile -t safeway-web:ci .

@@ -1,0 +1,53 @@
+# SafeWay — reverse proxy de production.
+# SAFEWAY_DOMAIN : domaine public (TLS Let's Encrypt automatique, HTTP → HTTPS automatique).
+{
+	# Pas de journal d'accès : il contiendrait IP, user-agent et URL de zones (§17, §18).
+	log default {
+		output stderr
+		level ERROR
+	}
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+{$SAFEWAY_DOMAIN:localhost} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; child-src blob:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "geolocation=(self), camera=(), microphone=(), bluetooth=(), usb=(), payment=(), interest-cohort=()"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Cross-Origin-Opener-Policy "same-origin"
+		-Server
+	}
+
+	# API : les en-têtes X-Forwarded-For servent uniquement au rate limiting (TRUST_PROXY_HOPS=1).
+	handle /api/* {
+		reverse_proxy api:3000 {
+			health_uri /api/health
+			lb_try_duration 2s
+		}
+	}
+
+	# Tuiles PMTiles, polices et sprites (volume) : cache long, requêtes Range supportées.
+	@map path /tiles/* /fonts/* /sprites/*
+	handle @map {
+		root * /srv/map
+		header Cache-Control "public, max-age=86400"
+		file_server
+	}
+
+	handle {
+		root * /srv/app
+		@immutable path /assets/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		@sw path /sw.js /registerSW.js /manifest.webmanifest /index.html
+		header @sw Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
