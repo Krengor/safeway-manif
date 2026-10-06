@@ -123,6 +123,19 @@ PWA ──POST /api/route {from,to} (sans cookie)──► Caddy (retire Cookie)
 - Logs : méthode, route (motif, sans paramètres), code HTTP, durée, id de requête aléatoire. Ni IP, ni URL,
   ni en-têtes, ni corps.
 
+## Réseau dégradé (V0.3)
+
+- **Carte hors ligne** : « Préparer la manif » (écran Confidentialité) télécharge le fichier PMTiles de la
+  région dans le Cache Storage. La carte lit alors ses tuiles dans ce fichier local (`OfflineFirstSource`),
+  sans aucune requête réseau ; sinon, requêtes HTTP Range habituelles. Polices et icônes sont mises en
+  cache au fil de l'eau par le service worker. Les régions proposées viennent de `/tiles/regions.json`
+  (généré par `fetch-map-assets`). En production : un fichier par grande ville ou région.
+- **Envois en attente** : un signalement ou un vote sans réseau (pas de réponse, délai dépassé, 502/503/504)
+  est gardé en mémoire puis renvoyé au retour du réseau (événement `online` + toutes les 15 s), abandonné
+  après 10 min. Pas de doublon possible côté serveur (doublon = confirmation, 1 vote par compte). La file est
+  vidée avec le Mode Manif.
+- **Indicateurs** : « Hors ligne » immédiat, nombre d'envois en attente, âge des données affichées.
+
 ## Résilience
 
 - Redis indisponible → la carte reste lisible (PostgreSQL), le rate limiting bascule en mémoire locale ;

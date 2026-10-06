@@ -5,17 +5,21 @@ import { Map as MlMap, Marker, addProtocol, setWorkerUrl, type GeoJSONSource } f
 // MapLibre 6 charge son worker (module ES) depuis un fichier séparé : Vite l'empaquette
 // avec ses dépendances et le sert depuis notre origine (compatible CSP worker-src 'self').
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import { Protocol } from 'pmtiles';
+import { PMTiles, Protocol } from 'pmtiles';
+import { tileSourceFor } from '../lib/offlineMap';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import type { LocalPosition } from '../lib/useManifMode';
 import { cellPolygons, streetSegments, type CellSummary } from './overlay';
-import { BASEMAP_SOURCE, DEFAULT_CENTER, DEFAULT_ZOOM, buildStyle } from './style';
+import { BASEMAP_SOURCE, DEFAULT_CENTER, DEFAULT_ZOOM, TILES_URL, buildStyle } from './style';
 
 let initialized = false;
 function initMapLibre() {
   if (initialized) return;
   setWorkerUrl(workerUrl);
-  addProtocol('pmtiles', new Protocol().tile);
+  const protocol = new Protocol();
+  // Tuiles lues dans la région téléchargée si elle existe (hors ligne), sinon sur le réseau.
+  protocol.add(new PMTiles(tileSourceFor(TILES_URL)));
+  addProtocol('pmtiles', protocol.tile);
   initialized = true;
 }
 

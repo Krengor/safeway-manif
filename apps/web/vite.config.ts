@@ -27,8 +27,16 @@ export default defineConfig({
       // révélerait sur l'appareil les zones consultées (≈ historique de position).
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        navigateFallbackDenylist: [/^\/api\//, /^\/tiles\//],
-        runtimeCaching: [],
+        navigateFallbackDenylist: [/^\/api\//, /^\/tiles\//, /^\/ws/],
+        // Polices et icônes de la carte : statiques, identiques pour tous, ne révèlent pas les
+        // lieux consultés → mises en cache pour que la carte téléchargée reste lisible hors ligne.
+        runtimeCaching: [
+          {
+            urlPattern: /\/(fonts|sprites)\//,
+            handler: 'CacheFirst',
+            options: { cacheName: 'sw-map-assets', expiration: { maxEntries: 2000 } },
+          },
+        ],
       },
       manifest: {
         name: 'SafeWay',

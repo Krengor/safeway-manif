@@ -1,3 +1,5 @@
+import { OfflineMapPanel } from '../components/OfflineMapPanel';
+
 /** Accès au code source exigé par l'AGPL-3.0 (§13) pour les utilisateurs réseau. */
 const SOURCE_URL = 'https://github.com/Krengor/safeway-manif';
 
@@ -20,6 +22,15 @@ export function PrivacyScreen({ onClose, onShowTutorial }: Props) {
       >
         💡 Comment ça marche ? Revoir la prise en main
       </button>
+      <section>
+        <h2 className="mb-1 text-lg font-bold">Préparer la manif</h2>
+        <p className="mb-2 text-sm text-muted">
+          Le réseau mobile sature souvent en manifestation : téléchargez la carte avant de partir pour l'avoir même
+          sans réseau. Elle reste sur votre appareil.
+        </p>
+        <OfflineMapPanel />
+      </section>
+
       <h1 className="text-2xl font-bold">Confidentialité</h1>
 
       <section>
