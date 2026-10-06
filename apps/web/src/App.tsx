@@ -6,6 +6,7 @@ import { ReportSheet } from './components/ReportSheet';
 import { RoutePanel } from './components/RoutePanel';
 import { api, ApiRequestError } from './lib/api';
 import { useManifMode } from './lib/useManifMode';
+import { useOnline, useOutbox } from './lib/useOutbox';
 import { useTrip } from './lib/useTrip';
 import { useZoneEvents } from './lib/useZoneEvents';
 import { MapView, type MapViewHandle } from './map/MapView';
@@ -17,6 +18,12 @@ import { Tutorial, markTutorialSeen, tutorialSeen } from './screens/Tutorial';
 
 type Screen = 'map' | 'auth' | 'account' | 'privacy';
 const STALE_AFTER_MS = 45_000;
+
+/**
+ * Échec d'acheminement (pas de réponse, délai dépassé, ou serveur injoignable derrière le
+ * proxy) : à distinguer d'un refus explicite, qui ne doit pas être renvoyé.
+ */
+const isNetworkError = (err: unknown) => err instanceof ApiRequestError && [0, 502, 503, 504].includes(err.status);
 
 function useDarkMode(): boolean {
   const query = '(prefers-color-scheme: dark)';
@@ -60,6 +67,12 @@ export function App() {
   const cells = useMemo(() => summarizeCells(zoneData.events, now), [zoneData.events, now]);
   const statusByCell = useMemo(() => new Map(cells.map((c) => [c.cell, c.status])), [cells]);
   const trip = useTrip(manif.position, statusByCell);
+  const online = useOnline();
+  const outbox = useOutbox((event, item) => {
+    if (event) zoneData.upsert(event);
+    else if (item.kind === 'vote') zoneData.remove(item.eventId);
+    setToast(item.kind === 'report' ? 'Signalement en attente envoyé.' : 'Vote en attente envoyé.');
+  });
 
   useEffect(() => {
     api.me().then((me) => setPseudo(me.pseudo), () => setPseudo(null));
@@ -84,16 +97,17 @@ export function App() {
   const toggleManif = useCallback(() => {
     if (manif.active) {
       manif.stop();
-      // Fin de session : on efface les données locales (§4), trajet compris.
+      // Fin de session : on efface les données locales (§4), trajet et envois en attente compris.
       zoneData.clear();
       trip.stop();
+      outbox.clear();
       setReportTarget(null);
       setSelectedCell(null);
       setToast('Mode Manif désactivé — position et trajet effacés.');
     } else {
       manif.start();
     }
-  }, [manif, zoneData, trip]);
+  }, [manif, zoneData, trip, outbox]);
 
   // Localisation coupée (désactivation, refus du GPS…) : le trajet n'a plus de sens
   // et ne doit pas rester en mémoire.
@@ -154,14 +168,20 @@ export function App() {
   const onPick = async (type: EventType) => {
     if (!reportTarget || !manif.cell) return;
     setBusy('report');
+    const body = { type, cell: reportTarget.cell, presenceCell: manif.cell };
     try {
-      const { event, created } = await api.report({ type, cell: reportTarget.cell, presenceCell: manif.cell });
+      const { event, created } = await api.report(body);
       zoneData.upsert(event);
       navigator.vibrate?.(40);
       setToast(created ? 'Signalement publié.' : 'Déjà signalé : votre confirmation est comptée.');
       setReportTarget(null);
     } catch (err) {
-      handleApiError(err);
+      if (isNetworkError(err)) {
+        outbox.add({ kind: 'report', body });
+        navigator.vibrate?.(40);
+        setToast('Pas de réseau : signalement gardé, envoi automatique dès le retour du réseau.');
+        setReportTarget(null);
+      } else handleApiError(err);
     } finally {
       setBusy(null);
     }
@@ -177,6 +197,11 @@ export function App() {
       navigator.vibrate?.(30);
       setToast(vote === 1 ? 'Merci, confirmation enregistrée.' : 'Merci, signalement marqué comme plus d’actualité.');
     } catch (err) {
+      if (isNetworkError(err)) {
+        outbox.add({ kind: 'vote', eventId: event.id, vote, presenceCell: manif.cell });
+        setToast('Pas de réseau : vote gardé, envoi automatique dès le retour du réseau.');
+        return;
+      }
       if (err instanceof ApiRequestError && err.status === 404) zoneData.remove(event.id);
       handleApiError(err);
     } finally {
@@ -254,7 +279,17 @@ export function App() {
             Localisation refusée : autorisez-la dans les réglages du navigateur pour utiliser le Mode Manif.
           </p>
         )}
-        {staleMinutes !== null && (
+        {!online && (
+          <p role="status" className="pointer-events-auto rounded-xl bg-unknown px-3 py-2 font-semibold text-white">
+            📴 Hors ligne : carte et derniers signalements connus.
+          </p>
+        )}
+        {outbox.pending > 0 && (
+          <p role="status" className="pointer-events-auto rounded-xl bg-panel/95 px-3 py-2 text-sm font-semibold shadow">
+            📤 {outbox.pending} envoi{outbox.pending > 1 ? 's' : ''} en attente du réseau
+          </p>
+        )}
+        {staleMinutes !== null && online && (
           <p role="status" className="pointer-events-auto rounded-xl bg-warn px-3 py-2 font-semibold text-white">
             Données non actualisées depuis {staleMinutes} min.
           </p>

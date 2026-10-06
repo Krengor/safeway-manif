@@ -19,6 +19,8 @@ pourrait en tirer.
 | Compteur de rate limiting | Redis, clé `HMAC(secret, ip)` | 1 à 10 min | IP récentes, seulement avec `RATE_LIMIT_SECRET` |
 | Départ / arrivée d'un itinéraire | requête au routing-service (sans cookie) puis Valhalla, en mémoire | durée du calcul | aucune trace persistante ; ni lien avec un compte (pas de cookie), ni journal (Valhalla sans logs) |
 | Trajet en cours, alertes | mémoire du téléphone | jusqu'à l'arrêt du trajet ou du Mode Manif | aucune (jamais transmis) |
+| Envois en attente (signalement/vote sans réseau) | mémoire du téléphone | jusqu'à l'envoi, 10 min max, ou l'arrêt du Mode Manif | aucune (jamais écrit sur le disque) |
+| Carte hors ligne d'une région | Cache Storage du téléphone | jusqu'à suppression par l'utilisateur | sur l'appareil seulement : indique la région préparée (choix volontaire), pas les rues consultées |
 | Logs | stdout | selon l'hébergeur | méthode, route, statut, durée |
 
 ## Point d'attention connu

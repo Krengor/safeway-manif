@@ -8,11 +8,12 @@
  * Usage : npm run fetch-map-assets -w @safeway/web
  *   SAFEWAY_BBOX="minLon,minLat,maxLon,maxLat"  zone à extraire (défaut Besançon)
  *   SAFEWAY_MAXZOOM=15                           zoom maximum
+ *   SAFEWAY_REGION_NAME="Besançon"               nom affiché pour le téléchargement hors ligne
  * En production, extraire la France entière (ou plusieurs villes) et servir le fichier via CDN.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { arch, platform } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -95,7 +96,17 @@ async function sprites() {
   }
 }
 
+/** Liste des régions proposées au téléchargement hors ligne dans l'app. */
+async function regionsManifest() {
+  const file = join(PUBLIC, 'tiles', 'basemap.pmtiles');
+  const { size } = await stat(file);
+  const regions = [{ id: 'default', name: process.env.SAFEWAY_REGION_NAME ?? 'Besançon', url: '/tiles/basemap.pmtiles', bytes: size }];
+  await writeFile(join(PUBLIC, 'tiles', 'regions.json'), JSON.stringify(regions, null, 2) + '\n');
+  log(`→ regions.json (${(size / 1e6).toFixed(1)} Mo)`);
+}
+
 await sprites();
 await fonts();
 await tiles();
+await regionsManifest();
 log('✓ assets cartographiques prêts dans apps/web/public/');
