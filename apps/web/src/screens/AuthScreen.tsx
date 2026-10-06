@@ -4,7 +4,8 @@ import { loginWithPasskey, passkeyErrorMessage, passkeysSupported, registerWithP
 
 interface Props {
   reason: string | null;
-  onDone(pseudo: string): void;
+  /** `created` : vrai pour une inscription (déclenche le tutoriel), faux pour une connexion. */
+  onDone(pseudo: string, created: boolean): void;
   onCancel(): void;
 }
 
@@ -14,11 +15,11 @@ export function AuthScreen({ reason, onDone, onCancel }: Props) {
   const [error, setError] = useState<string | null>(null);
   const supported = passkeysSupported();
 
-  async function run(action: () => Promise<string>) {
+  async function run(action: () => Promise<string>, created: boolean) {
     setBusy(true);
     setError(null);
     try {
-      onDone(await action());
+      onDone(await action(), created);
     } catch (err) {
       setError(passkeyErrorMessage(err));
     } finally {
@@ -33,7 +34,7 @@ export function AuthScreen({ reason, onDone, onCancel }: Props) {
       setError('Pseudo : 3 à 24 caractères, lettres, chiffres, - et _ uniquement.');
       return;
     }
-    void run(() => registerWithPasskey(parsed.data));
+    void run(() => registerWithPasskey(parsed.data), true);
   }
 
   return (
@@ -90,7 +91,7 @@ export function AuthScreen({ reason, onDone, onCancel }: Props) {
       <button
         type="button"
         disabled={busy || !supported}
-        onClick={() => void run(loginWithPasskey)}
+        onClick={() => void run(loginWithPasskey, false)}
         className="min-h-14 rounded-xl border-2 border-line text-lg font-bold disabled:opacity-50"
       >
         J'ai déjà une passkey
