@@ -40,6 +40,8 @@ export class Hub {
   private readonly clientZones = new Map<HubClient, Set<string>>();
   private readonly pending = new Map<string, ZoneBatch>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Compteurs cumulés pour les métriques (§64). */
+  readonly counters = { messages: 0, tooSlow: 0 };
 
   constructor(
     private readonly bus: BusSubscriber,
@@ -53,6 +55,30 @@ export class Hub {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  get batchMs(): number {
+    return this.options.batchMs;
+  }
+
+  /** Change la fenêtre de regroupement (dégradation contrôlée, §56). */
+  setBatchMs(batchMs: number): void {
+    if (batchMs === this.options.batchMs) return;
+    this.options.batchMs = batchMs;
+    if (this.timer) {
+      this.stop();
+      this.start();
+    }
+  }
+
+  /** Envoie un même message à toutes les connexions (sérialisé une fois). */
+  broadcast(message: ServerMessage): void {
+    const data = JSON.stringify(message);
+    for (const client of this.clientZones.keys()) {
+      if (client.bufferedAmount > this.options.maxBufferedBytes) continue;
+      client.send(data);
+      this.counters.messages += 1;
+    }
   }
 
   get stats() {
@@ -111,9 +137,11 @@ export class Hub {
         if (client.bufferedAmount > this.options.maxBufferedBytes) {
           client.close(CLOSE_TOO_SLOW, 'client trop lent');
           this.removeClient(client);
+          this.counters.tooSlow += 1;
           continue;
         }
         client.send(data);
+        this.counters.messages += 1;
       }
     }
   }

@@ -9,10 +9,11 @@ import { api, ApiRequestError } from './api';
 import { newDangersOnRoute } from './routeAlerts';
 import type { LocalPosition } from './useManifMode';
 
-/** Délai minimal entre deux calculs (debounce côté client, §55). */
-const RECOMPUTE_COOLDOWN_MS = 5000;
-
-export function useTrip(position: LocalPosition | null, statusByCell: ReadonlyMap<string, ZoneStatus>) {
+/**
+ * @param recomputeCooldownMs délai minimal entre deux calculs (debounce côté client, §55),
+ *   allongé par la dégradation contrôlée (§56).
+ */
+export function useTrip(position: LocalPosition | null, statusByCell: ReadonlyMap<string, ZoneStatus>, recomputeCooldownMs: number) {
   const [picking, setPicking] = useState(false);
   const [destination, setDestination] = useState<LocalPosition | null>(null);
   const [route, setRoute] = useState<RouteResponse | null>(null);
@@ -22,6 +23,8 @@ export function useTrip(position: LocalPosition | null, statusByCell: ReadonlyMa
   const [cooldown, setCooldown] = useState(false);
   const positionRef = useRef(position);
   positionRef.current = position;
+  const cooldownRef = useRef(recomputeCooldownMs);
+  cooldownRef.current = recomputeCooldownMs;
 
   const compute = useCallback(async (dest: LocalPosition) => {
     const from = positionRef.current;
@@ -32,7 +35,7 @@ export function useTrip(position: LocalPosition | null, statusByCell: ReadonlyMa
     setLoading(true);
     setError(null);
     setCooldown(true);
-    window.setTimeout(() => setCooldown(false), RECOMPUTE_COOLDOWN_MS);
+    window.setTimeout(() => setCooldown(false), cooldownRef.current);
     try {
       const result = await api.route([from.lng, from.lat], [dest.lng, dest.lat]);
       setRoute(result);

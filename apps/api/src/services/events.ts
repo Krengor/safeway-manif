@@ -16,6 +16,7 @@ import {
   extendedExpiry,
   shouldWithdraw,
   zoneOf,
+  type BusMessage,
   type EventType,
   type PublicEvent,
 } from '@safeway/shared';
@@ -66,6 +67,10 @@ export function toPublic(row: EventRow): PublicEvent {
 
 export type Vote = 1 | -1;
 
+/** Micro-cache des lectures de zone : sous forte affluence, des milliers de clients lisent les mêmes zones. */
+const ZONE_CACHE_MS = 1000;
+const ZONE_CACHE_MAX = 10_000;
+
 export interface EventServiceOptions {
   /** Diffusion temps réel, après validation de la transaction uniquement. */
   bus?: EventBus;
@@ -82,6 +87,8 @@ export class EventService {
   private readonly links: ReputationLinks;
   private readonly onSettled: (events: SettledEvent[]) => Promise<unknown>;
   private readonly signer: EventSigner | null;
+  /** zone → lecture récente ou en cours (les requêtes simultanées partagent la même requête SQL). */
+  private readonly zoneCache = new Map<string, { at: number; events: Promise<PublicEvent[]> }>();
 
   constructor(
     private readonly sql: Sql,
@@ -98,6 +105,28 @@ export class EventService {
   private pub(row: EventRow): PublicEvent {
     const event = toPublic(row);
     return this.signer ? this.signer.sign(event) : event;
+  }
+
+  /**
+   * Signalements actifs d'une zone. Résultat partagé pendant 1 s entre toutes les requêtes de
+   * l'instance (une requête SQL et une signature par zone et par seconde, quel que soit le
+   * nombre de lecteurs) ; invalidé aussitôt par toute écriture locale sur la zone.
+   */
+  listZone(zone: string): Promise<PublicEvent[]> {
+    const now = Date.now();
+    const cached = this.zoneCache.get(zone);
+    if (cached && now - cached.at < ZONE_CACHE_MS) return cached.events;
+    if (this.zoneCache.size >= ZONE_CACHE_MAX) this.zoneCache.clear();
+    const events = this.listByZones([zone]);
+    this.zoneCache.set(zone, { at: now, events });
+    events.catch(() => this.zoneCache.delete(zone)); // une erreur n'est jamais mise en cache
+    return events;
+  }
+
+  /** Après une écriture : invalide le cache local de la zone et diffuse en temps réel. */
+  private notify(zone: string, message: BusMessage): void {
+    this.zoneCache.delete(zone);
+    this.bus.publish(zone, message);
   }
 
   async listByZones(zones: readonly string[]): Promise<PublicEvent[]> {
@@ -172,7 +201,7 @@ export class EventService {
 
     if (result.created) this.links.recordAuthor(result.event.id, userId);
     else this.links.recordVote(result.event.id, userId, 1);
-    this.bus.publish(zoneOf(cell), { event: result.event });
+    this.notify(zoneOf(cell), { event: result.event });
     return result;
   }
 
@@ -188,7 +217,7 @@ export class EventService {
     if (!result) return null;
     this.links.recordVote(eventId, userId, vote);
     // Un événement retiré par la communauté est signalé aux clients pour disparaître aussitôt.
-    this.bus.publish(zoneOf(result.cell), result.event ? { event: result.event } : { removed: eventId });
+    this.notify(zoneOf(result.cell), result.event ? { event: result.event } : { removed: eventId });
     return result.event;
   }
 
@@ -250,7 +279,7 @@ export class EventService {
       DELETE FROM events WHERE id = ${id}
       RETURNING id, zone_id, confirmations, invalidations, support_weight, against_weight`;
     if (!row) return null;
-    this.bus.publish(row.zone_id, { removed: id });
+    this.notify(row.zone_id, { removed: id });
     return row;
   }
 

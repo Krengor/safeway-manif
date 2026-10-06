@@ -6,7 +6,7 @@ type RegionState = { region: OfflineRegion; downloaded: boolean; progress: numbe
 const sizeLabel = (bytes: number) => `${(bytes / 1e6).toFixed(1).replace('.', ',')} Mo`;
 
 /** Préparer la manif : télécharger la carte de sa région pour l'avoir sans réseau. */
-export function OfflineMapPanel() {
+export function OfflineMapPanel({ disabled = false }: { disabled?: boolean }) {
   const [regions, setRegions] = useState<RegionState[] | null>(null);
 
   useEffect(() => {
@@ -44,9 +44,15 @@ export function OfflineMapPanel() {
 
   if (regions === null) return <p className="text-sm text-muted">Chargement…</p>;
   if (regions.length === 0) return <p className="text-sm text-muted">Aucune carte téléchargeable sur ce serveur.</p>;
+  const busyServer = disabled && regions.some((s) => !s.downloaded);
 
   return (
     <ul className="flex flex-col gap-2">
+      {busyServer && (
+        <li role="status" className="text-sm font-semibold text-warn">
+          Forte affluence : téléchargement suspendu pour garder la carte en direct fluide. Réessayez plus tard.
+        </li>
+      )}
       {regions.map((state) => (
         <li key={state.region.id} className="rounded-xl border-2 border-line p-3">
           <div className="flex items-center justify-between gap-2">
@@ -65,7 +71,12 @@ export function OfflineMapPanel() {
                 Supprimer
               </button>
             ) : (
-              <button type="button" onClick={() => void download(state)} className="min-h-11 rounded-xl bg-accent px-3 font-bold text-accent-fg">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => void download(state)}
+                className="min-h-11 rounded-xl bg-accent px-3 font-bold text-accent-fg disabled:opacity-50"
+              >
                 ⬇ Télécharger
               </button>
             )}

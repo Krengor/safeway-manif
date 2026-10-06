@@ -9,6 +9,9 @@ const schema = z.object({
   REDIS_URL: z.string().min(1),
   /** Plafond de connexions par instance : au-delà, refus propre → le LB en choisit une autre. */
   MAX_CONNECTIONS: z.coerce.number().int().positive().default(50_000),
+  /** Port des métriques internes (§64) ; 0 = désactivé. Ne jamais l'exposer publiquement. */
+  METRICS_PORT: z.coerce.number().int().min(0).default(0),
+  METRICS_HOST: z.string().default('127.0.0.1'),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'silent']).default('info'),
 });
 

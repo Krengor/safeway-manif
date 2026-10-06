@@ -179,10 +179,49 @@ Quand le réseau sature ou tombe, les signalements passent de téléphone à té
 - **Limites** : manuel, de proche en proche (un web ne peut pas faire de Bluetooth automatique) ; le
   téléphone qui reçoit doit avoir ouvert SafeWay au moins une fois en ligne (application + clé publique).
 
+## Dégradation contrôlée (V0.3)
+
+Sous la charge, SafeWay ralentit au lieu de tomber (§56). Quatre niveaux, définis une fois dans
+`packages/shared/src/load.ts` et appliqués partout :
+
+| Niveau | Temps réel (regroupement) | Cache des zones | Polling client (live / sans temps réel) | Itinéraire | Secondaire* |
+|---|---|---|---|---|---|
+| 0 Normal | 250 ms | 5 s | 30 s / 10 s | recalcul ≥ 5 s | oui |
+| 1 Forte charge | 1 s | 10 s | 45 s / 15 s | ≥ 15 s, sans animations | oui |
+| 2 Critique | 2,5 s | 20 s | 60 s / 20 s | ≥ 30 s | non |
+| 3 Survie | 5 s | 30 s | 60 s / 30 s | coupé | non |
+
+\* changement de pseudo, téléchargement de la carte hors ligne. Lire la carte, signaler et voter restent
+toujours disponibles (priorités 1 à 4 du §56).
+
+- **Mesure** : toutes les 5 s, chaque instance d'API mesure le retard de sa boucle d'événements (p99), la
+  latence de ses réponses (p95), son taux de 5xx et ses requêtes en cours. Le pire indicateur donne son
+  niveau ; on monte aussitôt, on ne redescend que d'un cran par 30 s de calme (pas de clignotement).
+- **Cluster** : chaque instance publie son niveau dans Redis ; le niveau appliqué est celui de la pire
+  instance vivante, ou celui forcé par l'administrateur (écran Modération, 1 h maximum par défaut).
+- **Diffusion** : `/api/map/status`, et surtout le gateway, qui reçoit le niveau par le bus, ajuste sa
+  fenêtre de regroupement et l'annonce à chaque client (`{ t: 'load' }`). Un changement de niveau ne
+  déclenche aucune requête immédiate chez les clients : ce serait un pic au pire moment.
+- **Lectures mutualisées** : `/map/zones/:zone` passe par un micro-cache d'une seconde par zone et par
+  instance (les requêtes simultanées partagent une seule requête SQL et une seule signature), invalidé à
+  chaque écriture locale.
+
+## Observabilité (§64)
+
+L'API et le gateway exposent `GET /metrics` (format Prometheus) sur un **port interne séparé**
+(`METRICS_PORT`, désactivé par défaut), jamais routé par Caddy. Contenu : requêtes par motif de route,
+méthode et classe de statut, histogramme de latence, requêtes en cours, retard de boucle d'événements,
+niveau de charge, signalements et votes (compteurs), signalements actifs ; côté gateway : connexions,
+zones suivies, messages envoyés, clients trop lents, connexions refusées. Aucune étiquette ne contient
+d'IP, de pseudo, de cellule, de zone ni d'identifiant (test automatisé).
+
 ## Résilience
 
 - Redis indisponible → la carte reste lisible (PostgreSQL), le rate limiting bascule en mémoire locale ;
-  les écritures (session requise) échouent proprement.
+  les écritures (session requise) répondent 503 et l'app les garde en attente pour les renvoyer seules.
+  Redis n'ayant volontairement aucune persistance disque, un **redémarrage** de Redis déconnecte tout le
+  monde (reconnexion par passkey, les envois en attente repartent ensuite) : en production, prévoir une
+  réplique (Sentinel) plutôt que d'activer la persistance (§52).
 - Réseau mobile saturé → la dernière carte reste affichée en mémoire avec « Données non actualisées depuis X min ».
 - La coquille de l'app est en cache (service worker). Les réponses d'API et les tuiles ne sont **pas** mises en
   cache par le service worker : ce cache constituerait sur l'appareil un historique des zones consultées.
@@ -199,7 +238,8 @@ statiques et tuiles servis hors API, pas de broadcast global, index `(zone_id, e
 2. **Compteurs de votes chauds** : le verrou de ligne par événement limite un événement « viral ».
    Compteurs Redis + flush asynchrone par lots.
 3. **PgBouncer + réplicas de lecture** pour `/map/zones`, cache applicatif court en Redis.
-4. **Niveaux de dégradation** (§56) pilotés par la charge, exposés par `/api/map/status`.
-5. **Tests de charge** `tests/load` exécutés en préproduction, rapports dans `docs/performance/`.
+4. ~~Niveaux de dégradation (§56) pilotés par la charge~~ : fait en V0.3 (voir plus haut).
+5. **Tests de charge** `tests/load` (scénarios A à I, k6) exécutés en préproduction, rapports dans
+   `docs/performance/`. Premiers essais locaux : `tests/load/README.md`.
 
 Aucune revendication de capacité tant que l'étape 5 n'a pas produit de rapport.

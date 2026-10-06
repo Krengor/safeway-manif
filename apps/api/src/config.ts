@@ -20,6 +20,9 @@ const schema = z.object({
   EVENT_SIGNING_KEY: z.string().min(40).optional(),
   /** Nombre de reverse proxies de confiance devant l'API (Caddy, LB…). */
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
+  /** Port des métriques internes (§64) ; 0 = désactivé. Ne jamais l'exposer publiquement. */
+  METRICS_PORT: z.coerce.number().int().min(0).default(0),
+  METRICS_HOST: z.string().default('127.0.0.1'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'silent']).default('info'),
 });
 

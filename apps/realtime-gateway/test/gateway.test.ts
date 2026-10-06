@@ -1,5 +1,5 @@
 /** Test d'intégration : vrai serveur WebSocket + vrai Redis (celui de `npm run dev:infra`). */
-import { REALTIME_PATH, toEventCell, zoneChannel, zoneOf, type ServerMessage } from '@safeway/shared';
+import { LOAD_CHANNEL, REALTIME_PATH, toEventCell, zoneChannel, zoneOf, type ServerMessage } from '@safeway/shared';
 import { Redis } from 'ioredis';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -64,6 +64,27 @@ describe('realtime-gateway', () => {
     await until(() => client.messages.some((m) => m.t === 'upd'), 1000);
     expect(Date.now() - sentAt).toBeLessThan(1000);
     expect(client.messages.find((m) => m.t === 'upd')).toEqual({ t: 'upd', zone: ZONE, events: [event], removed: [] });
+    client.ws.close();
+  });
+
+  it('suit le niveau de charge publié par l’API et le relaie aux clients', async () => {
+    const client = connect();
+    await client.opened;
+    await until(() => client.messages.some((m) => m.t === 'hello'));
+    expect(client.messages.find((m) => m.t === 'hello')).toEqual({ t: 'hello', batchMs: 250, level: 0 });
+
+    await until(() => {
+      void publisher.publish(LOAD_CHANNEL, '2');
+      return gateway.level === 2;
+    });
+    expect(gateway.hub.batchMs).toBe(2500);
+    await until(() => client.messages.some((m) => m.t === 'load'));
+    expect(client.messages.find((m) => m.t === 'load')).toEqual({ t: 'load', level: 2 });
+
+    await publisher.publish(LOAD_CHANNEL, 'n/a'); // ignoré
+    await publisher.publish(LOAD_CHANNEL, '0');
+    await until(() => gateway.level === 0);
+    expect(gateway.hub.batchMs).toBe(250);
     client.ws.close();
   });
 

@@ -17,7 +17,7 @@ import { createDb, type Sql } from '../src/db.js';
 import { SessionStore } from '../src/lib/sessions.js';
 import { migrate } from '../src/migrate.js';
 import { createRedis, type Redis } from '../src/redis.js';
-import { buildApp } from '../src/server.js';
+import { buildApp, contextOf } from '../src/server.js';
 import { EventService } from '../src/services/events.js';
 import { RedisReputationLinks, ReputationService } from '../src/services/reputation.js';
 
@@ -644,4 +644,72 @@ describe('compte', () => {
     expect(res.json().authenticatorSelection.residentKey).toBe('required');
     expect(res.headers['set-cookie']).toContain('HttpOnly');
   });
+});
+
+describe('dégradation contrôlée (§56)', () => {
+  const status = async () => (await app.inject({ method: 'GET', url: '/api/map/status' })).json();
+  const zoneCache = async () =>
+    (await app.inject({ method: 'GET', url: `/api/map/zones/${zoneOf(HERE)}` })).headers['cache-control'];
+
+  async function newAdmin() {
+    const admin = await newUser();
+    await sql`UPDATE users SET role = 'admin' WHERE id = ${admin.id}`;
+    return admin;
+  }
+
+  afterAll(async () => {
+    await redis.del('load:override');
+    await contextOf(app).load.tick();
+  });
+
+  it("applique le niveau forcé par l'administrateur, puis revient à l'automatique", async () => {
+    const admin = await newAdmin();
+    const user = await newUser();
+    expect(await status()).toMatchObject({ level: 0 });
+    expect(await zoneCache()).toContain('max-age=5');
+    expect((await post('/api/admin/load', user.cookie, { level: 2 })).statusCode).toBe(403);
+
+    const forced = await post('/api/admin/load', admin.cookie, { level: 2, minutes: 5 });
+    expect(forced.statusCode).toBe(200);
+    expect(forced.json()).toMatchObject({ level: 2, auto: 0 });
+    expect(forced.json().forcedUntil).toBeGreaterThan(Date.now() / 1000);
+    expect(await status()).toMatchObject({ level: 2 });
+    // Cache plus long, fonctions secondaires suspendues, écritures essentielles maintenues.
+    expect(await zoneCache()).toContain('max-age=20');
+    const rename = await app.inject({
+      method: 'PATCH',
+      url: '/api/me/pseudo',
+      payload: { pseudo: 't_renamed' },
+      headers: { cookie: user.cookie, [CSRF_HEADER]: '1' },
+    });
+    expect(rename.statusCode).toBe(503);
+    expect((await post('/api/events', user.cookie, { type: 'FOULE_DENSE', cell: HERE, presenceCell: HERE })).statusCode).toBe(201);
+    expect((await get('/api/admin/overview', admin.cookie)).json().load).toMatchObject({ level: 2 });
+
+    const reset = await post('/api/admin/load', admin.cookie, { level: null });
+    expect(reset.json()).toEqual({ level: 0, auto: 0 });
+    expect(await status()).toMatchObject({ level: 0 });
+  });
+
+  it('mutualise les lectures simultanées d’une zone et invalide le cache à l’écriture', async () => {
+    const { events } = contextOf(app);
+    const zone = zoneOf(HERE);
+    expect(events.listZone(zone)).toBe(events.listZone(zone)); // une seule requête SQL partagée
+    expect(await events.listZone(zone)).toHaveLength(0);
+    const user = await newUser();
+    await post('/api/events', user.cookie, { type: 'FOULE_DENSE', cell: HERE, presenceCell: HERE });
+    expect(await events.listZone(zone)).toHaveLength(1); // visible aussitôt, sans attendre 1 s
+  });
+
+  it('expose des métriques système sans donnée personnelle', async () => {
+    const user = await newUser();
+    await post('/api/events', user.cookie, { type: 'GAZ_FUMEE', cell: HERE, presenceCell: HERE });
+    const text = contextOf(app).metrics.registry.render();
+    expect(text).toMatch(/safeway_http_requests_total\{method="POST",route="\/api\/events",status="2xx"\} \d+/);
+    expect(text).toContain('safeway_reports_total{kind="new"}');
+    expect(text).toContain('safeway_load_level 0');
+    for (const secret of [HERE, zoneOf(HERE), user.pseudo, user.id, '127.0.0.1']) expect(text).not.toContain(secret);
+  });
+
+  const get = (url: string, cookie: string) => app.inject({ method: 'GET', url, headers: { cookie } });
 });

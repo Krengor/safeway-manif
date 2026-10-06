@@ -3,13 +3,35 @@
  * Données volontairement limitées : signalements publics, chiffres agrégés, comptes à faible
  * fiabilité par tranche. Aucune position, aucun lien auteur ↔ signalement.
  */
-import { EVENT_META, pseudoSchema, type AdminAccount, type AdminOverview, type PublicEvent } from '@safeway/shared';
+import {
+  DEGRADATION_LEVELS,
+  EVENT_META,
+  pseudoSchema,
+  type AdminAccount,
+  type AdminOverview,
+  type DegradationLevel,
+  type PublicEvent,
+} from '@safeway/shared';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiRequestError } from '../lib/api';
 
 interface Props {
   onClose(): void;
 }
+
+const LEVEL_LABELS: Record<DegradationLevel, string> = {
+  0: 'Normal',
+  1: 'Forte charge',
+  2: 'Critique',
+  3: 'Survie',
+};
+
+const LEVEL_HINTS: Record<DegradationLevel, string> = {
+  0: 'Temps réel complet, itinéraire, animations.',
+  1: 'Mises à jour regroupées, cache plus long, sans animations.',
+  2: 'Lecture prioritaire, itinéraire ralenti, fonctions secondaires coupées.',
+  3: 'Carte et signalements uniquement, itinéraire coupé.',
+};
 
 const ago = (now: number, t: number) => {
   const min = Math.round((now - t) / 60);
@@ -90,6 +112,42 @@ export function ModerationScreen({ onClose }: Props) {
               <p className="text-sm text-muted">{label}</p>
             </div>
           ))}
+        </section>
+      )}
+
+      {overview && (
+        <section aria-label="Charge du service" className="rounded-xl border-2 border-line p-3">
+          <h2 className="text-lg font-bold">
+            🚦 Charge : niveau {overview.load.level} — {LEVEL_LABELS[overview.load.level]}
+          </h2>
+          <p className="mb-2 text-sm text-muted">
+            {LEVEL_HINTS[overview.load.level]}{' '}
+            {overview.load.forcedUntil
+              ? `Forcé jusqu'à ${new Date(overview.load.forcedUntil * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} (mesuré : ${overview.load.auto}).`
+              : 'Automatique, selon la charge mesurée.'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {DEGRADATION_LEVELS.map((level) => (
+              <button
+                key={level}
+                type="button"
+                aria-pressed={overview.load.forcedUntil !== undefined && overview.load.level === level}
+                onClick={() => void act(() => api.admin.setLoad(level).then(() => {}), `Niveau ${level} forcé pour 1 h.`)}
+                className="min-h-11 rounded-xl border-2 border-line px-3 text-sm font-semibold aria-pressed:bg-accent aria-pressed:text-accent-fg"
+              >
+                {level} · {LEVEL_LABELS[level]}
+              </button>
+            ))}
+            {overview.load.forcedUntil !== undefined && (
+              <button
+                type="button"
+                onClick={() => void act(() => api.admin.setLoad(null).then(() => {}), 'Retour au niveau automatique.')}
+                className="min-h-11 rounded-xl bg-accent px-3 text-sm font-bold text-accent-fg"
+              >
+                Automatique
+              </button>
+            )}
+          </div>
         </section>
       )}
 

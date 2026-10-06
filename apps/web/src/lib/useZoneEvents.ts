@@ -9,13 +9,13 @@
  * Les données restent en mémoire : si le réseau tombe, la dernière carte reste affichée
  * avec l'âge des données. Rien n'est écrit sur le disque de l'appareil.
  */
-import type { PublicEvent } from '@safeway/shared';
+import { degradationPolicy, type DegradationLevel, type PublicEvent } from '@safeway/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { useRealtime } from './useRealtime';
 
-const POLL_FALLBACK_MS = 10_000;
-const POLL_LIVE_MS = 30_000;
+/** Sans temps réel, le niveau de charge est relu au plus toutes les… */
+const STATUS_REFRESH_MS = 30_000;
 /** Durée pendant laquelle un retrait masque l'événement malgré des réponses en cache périmées. */
 const TOMBSTONE_MS = 60_000;
 /** Au-delà, le réseau est jugé saturé (réponses publiques normalement < 1 s). */
@@ -31,6 +31,8 @@ export interface ZoneEventsState {
   live: boolean;
   /** Réseau saturé ou coupé : chargements en échec répétés, ou très lents. */
   degraded: boolean;
+  /** Niveau de dégradation contrôlée annoncé par le serveur (§56). */
+  level: DegradationLevel;
   /** Ajoute des signalements reçus hors réseau (déjà vérifiés ou marqués non vérifiés). */
   importShared: (events: PublicEvent[]) => void;
   refresh: () => void;
@@ -48,6 +50,8 @@ export function useZoneEvents(zones: readonly string[]): ZoneEventsState {
   // Santé du réseau, pour proposer le partage hors réseau quand il sature.
   const [failures, setFailures] = useState(0);
   const [slow, setSlow] = useState(false);
+  const [level, setLevel] = useState<DegradationLevel>(0);
+  const statusAt = useRef(0);
   const zonesKey = zones.join(',');
   const zonesRef = useRef(zones);
   zonesRef.current = zones;
@@ -89,12 +93,20 @@ export function useZoneEvents(zones: readonly string[]): ZoneEventsState {
       },
       [upsertMany, removeMany],
     ),
+    setLevel,
   );
+  const liveRef = useRef(live);
+  liveRef.current = live;
 
   const load = useCallback(async () => {
     const current = zonesRef.current;
     if (current.length === 0) return;
     const startedAt = Date.now();
+    // Sans temps réel, le niveau de charge n'est pas poussé : on le relit de temps en temps.
+    if (!liveRef.current && startedAt - statusAt.current > STATUS_REFRESH_MS) {
+      statusAt.current = startedAt;
+      api.mapStatus().then((s) => setLevel(s.level), () => {});
+    }
     const results = await Promise.allSettled(current.map((z) => api.zoneEvents(z)));
     const allFailed = results.every((r) => r.status === 'rejected');
     setFailures((n) => (allFailed ? n + 1 : 0));
@@ -118,23 +130,30 @@ export function useZoneEvents(zones: readonly string[]): ZoneEventsState {
     }
   }, []);
 
-  // Polling : immédiat au changement de zones, puis à intervalle selon l'état du temps réel.
+  // Polling : immédiat au changement de zones, puis à intervalle selon l'état du temps réel
+  // et le niveau de charge (plus espacé quand le serveur est sous pression).
+  const policy = degradationPolicy(level);
+  const pollMs = (live ? policy.pollLiveSeconds : policy.pollFallbackSeconds) * 1000;
+
+  // Chargement immédiat au changement de zones et à la (re)connexion du temps réel,
+  // pour resynchroniser aussitôt ce qui a pu être manqué.
   useEffect(() => {
     void load();
-    const timer = setInterval(
-      () => {
-        if (document.visibilityState === 'visible') void load();
-      },
-      live ? POLL_LIVE_MS : POLL_FALLBACK_MS,
-    );
+  }, [zonesKey, live, load]);
+
+  // Un changement de niveau ne déclenche PAS de requête immédiate : tous les clients
+  // le reçoivent en même temps, ce serait un pic de trafic au pire moment.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void load();
+    }, pollMs);
     const onVisible = () => document.visibilityState === 'visible' && void load();
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-    // `live` : à la (re)connexion on resynchronise aussitôt ce qui a pu être manqué.
-  }, [zonesKey, live, load]);
+  }, [pollMs, load]);
 
   const clear = useCallback(() => {
     setPolled(new Map());
@@ -160,6 +179,7 @@ export function useZoneEvents(zones: readonly string[]): ZoneEventsState {
     lastSuccessAt,
     live,
     degraded: failures >= 2 || slow,
+    level,
     importShared: upsertMany,
     refresh: () => void load(),
     upsert: useCallback((event: PublicEvent) => upsertMany([event]), [upsertMany]),

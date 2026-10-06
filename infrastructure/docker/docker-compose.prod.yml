@@ -50,6 +50,9 @@ services:
       RATE_LIMIT_SECRET: ${RATE_LIMIT_SECRET:?}
       EVENT_SIGNING_KEY: ${EVENT_SIGNING_KEY:?}
       TRUST_PROXY_HOPS: 1
+      # Métriques internes (§64) : réseau backend uniquement, jamais publiées ni routées par Caddy.
+      METRICS_PORT: 9100
+      METRICS_HOST: 0.0.0.0
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_started }
@@ -61,6 +64,8 @@ services:
     environment:
       PUBLIC_ORIGIN: https://${SAFEWAY_DOMAIN}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      METRICS_PORT: 9100
+      METRICS_HOST: 0.0.0.0
     depends_on:
       redis: { condition: service_started }
     networks: [backend]

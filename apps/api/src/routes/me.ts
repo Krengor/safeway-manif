@@ -1,4 +1,4 @@
-import { updatePseudoSchema, type MeResponse } from '@safeway/shared';
+import { degradationPolicy, updatePseudoSchema, type MeResponse } from '@safeway/shared';
 import type { FastifyInstance } from 'fastify';
 import { HttpError, parse } from '../lib/http.js';
 import type { AppContext } from '../server.js';
@@ -16,6 +16,10 @@ export async function meRoutes(app: FastifyInstance, ctx: AppContext): Promise<v
 
   app.patch('/me/pseudo', async (request): Promise<MeResponse> => {
     const userId = await ctx.requireUser(request);
+    // Fonction secondaire : suspendue en charge critique (§56).
+    if (!degradationPolicy(ctx.load.level).secondary) {
+      throw new HttpError(503, 'degraded', 'Fonction suspendue pendant la forte affluence, réessayez plus tard.');
+    }
     const { pseudo } = parse(updatePseudoSchema, request.body);
     try {
       await sql`UPDATE users SET pseudo = ${pseudo} WHERE id = ${userId}`;

@@ -1,4 +1,4 @@
-import { isNear, toEventCell, type EventType, type PublicEvent } from '@safeway/shared';
+import { degradationPolicy, isNear, toEventCell, type EventType, type PublicEvent } from '@safeway/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CellSheet } from './components/CellSheet';
 import { Legend } from './components/Legend';
@@ -73,7 +73,14 @@ export function App() {
   const now = Math.floor(tick / 1000) + zoneData.clockSkew;
   const cells = useMemo(() => summarizeCells(zoneData.events, now), [zoneData.events, now]);
   const statusByCell = useMemo(() => new Map(cells.map((c) => [c.cell, c.status])), [cells]);
-  const trip = useTrip(manif.position, statusByCell);
+  // Dégradation contrôlée (§56) : le serveur annonce son niveau de charge, l'app s'allège.
+  const policy = degradationPolicy(zoneData.level);
+  const trip = useTrip(manif.position, statusByCell, policy.routeRecomputeSeconds * 1000);
+
+  useEffect(() => {
+    if (policy.animations) delete document.documentElement.dataset.motion;
+    else document.documentElement.dataset.motion = 'off';
+  }, [policy.animations]);
   const online = useOnline();
   const outbox = useOutbox((event, item) => {
     if (event) zoneData.upsert(event);
@@ -158,6 +165,10 @@ export function App() {
   }, [manif.active, stopTrip]);
 
   const openTrip = () => {
+    if (!policy.routing) {
+      setToast('Itinéraire suspendu pendant la forte affluence. Carte et signalements restent disponibles.');
+      return;
+    }
     if (!manif.position) {
       if (!manif.active) manif.start();
       setToast('Activez le Mode Manif : la position de départ est nécessaire.');
@@ -277,6 +288,7 @@ export function App() {
         dark={dark}
         route={trip.route ? { shape: trip.route.shape, risk: trip.route.risk } : null}
         destination={trip.destination}
+        animate={policy.animations}
         onZonesChange={setZones}
         onSelectCell={setSelectedCell}
         onLongPress={onLongPress}
@@ -345,6 +357,12 @@ export function App() {
             📤 {outbox.pending} envoi{outbox.pending > 1 ? 's' : ''} en attente du réseau
           </p>
         )}
+        {zoneData.level >= 2 && (
+          <p role="status" className="pointer-events-auto rounded-xl bg-panel/95 px-3 py-2 text-sm font-semibold shadow">
+            🚦 Forte affluence : mises à jour un peu plus lentes
+            {policy.routing ? '' : ', itinéraire suspendu'}. Signaler fonctionne normalement.
+          </p>
+        )}
         {staleMinutes !== null && online && (
           <p role="status" className="pointer-events-auto rounded-xl bg-warn px-3 py-2 font-semibold text-white">
             Données non actualisées depuis {staleMinutes} min.
@@ -374,7 +392,7 @@ export function App() {
             loading={trip.loading}
             error={trip.error}
             alertCount={trip.alertCount}
-            canRecompute={trip.canRecompute}
+            canRecompute={trip.canRecompute && policy.routing}
             onRecompute={trip.recompute}
             onStop={trip.stop}
           />
@@ -488,6 +506,7 @@ export function App() {
           )}
           {screen === 'privacy' && (
             <PrivacyScreen
+              secondary={policy.secondary}
               onClose={() => setScreen('map')}
               onShowTutorial={() => {
                 setScreen('map');
@@ -499,6 +518,7 @@ export function App() {
             <AccountScreen
               pseudo={pseudo}
               isAdmin={isAdmin}
+              secondary={policy.secondary}
               onModeration={() => setScreen('moderation')}
               onPseudoChange={setPseudo}
               onClose={() => setScreen('map')}
