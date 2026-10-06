@@ -33,6 +33,14 @@
 		}
 	}
 
+	# Temps réel : WebSocket vers le pool de gateways (Caddy gère l'Upgrade nativement).
+	handle /ws {
+		reverse_proxy gateway:3001 {
+			health_uri /health
+			lb_policy least_conn
+		}
+	}
+
 	# Tuiles PMTiles, polices et sprites (volume) : cache long, requêtes Range supportées.
 	@map path /tiles/* /fonts/* /sprites/*
 	handle @map {

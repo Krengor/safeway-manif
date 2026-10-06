@@ -38,6 +38,26 @@ hexagones (Cyrus–Beck, [`map/clip.ts`](../apps/web/src/map/clip.ts)). PostGIS 
    majoritaires retirent immédiatement le signalement.
 6. Un job (chaque instance, toutes les ~60 s, idempotent) supprime physiquement les événements expirés.
 
+## Temps réel (V0.2)
+
+```text
+API ──PUBLISH ev:<zone>──► Redis Pub/Sub ──► realtime-gateway (N instances) ──WebSocket──► clients
+```
+
+- Un client envoie `{ t: 'sub', zones: [...] }` (zones H3 rés. 7 de sa vue, 12 max) ; le gateway ne
+  s'abonne au bus que pour les zones suivies par au moins un client.
+- Les changements sont regroupés par zone pendant 250 ms ; pour un même événement seule la révision la plus
+  haute est gardée. Chaque lot est sérialisé **une fois** puis envoyé à tous les abonnés de la zone.
+- Contre-pression : un client dont le tampon d'envoi dépasse 512 Ko est déconnecté (il se resynchronise).
+- Protection : origine vérifiée, messages de 2 Ko max, 20 messages / 10 s, ping toutes les 30 s.
+- Le gateway n'a ni base de données ni authentification : il ne voit que des zones, en mémoire.
+- Côté client : reconnexion avec backoff exponentiel + jitter ; polling toutes les 30 s quand le temps réel
+  est actif (resynchronisation), 10 s sinon. Fusion par révision (`rev`) quelle que soit la source.
+- Panne du bus ou d'un gateway : les écritures ne sont pas affectées, l'app retombe sur le polling
+  (indicateur « Différé »). Arrêt propre d'un gateway : code 1012, les clients se reconnectent ailleurs.
+
+Mesuré en local : ~230 ms entre l'écriture d'un signalement et son affichage chez un autre client.
+
 ## Score et couleurs
 
 [`packages/shared/src/confidence.ts`](../packages/shared/src/confidence.ts) — partagé client/serveur.
@@ -77,8 +97,8 @@ statiques et tuiles servis hors API, pas de broadcast global, index `(zone_id, e
 
 À faire, par ordre de priorité :
 
-1. **V0.2 — realtime-gateway** : service WebSocket séparé, abonnement par zone H3 rés. 7, fan-out via NATS,
-   batching 100-500 ms, backpressure. Le polling 10 s actuel est le repli.
+1. **Bus d'événements** : le gateway (fait en V0.2) passe par Redis Pub/Sub. Au-delà d'une instance Redis,
+   passer à Redis Cluster (SPUBLISH par zone) ou NATS — l'interface `EventBus` de l'API est prévue pour.
 2. **Compteurs de votes chauds** : le verrou de ligne par événement limite un événement « viral ».
    Compteurs Redis + flush asynchrone par lots.
 3. **PgBouncer + réplicas de lecture** pour `/map/zones`, cache applicatif court en Redis.

@@ -1,28 +1,32 @@
 /**
- * Chargement des signalements des zones visibles (H3 rés. 7), rafraîchi périodiquement.
- * V0.2 remplacera le polling par un abonnement temps réel aux mêmes zones (§50).
+ * Signalements des zones visibles (H3 rés. 7) : temps réel + polling de secours.
+ *
+ * - Temps réel connecté : polling espacé (resynchronisation de sécurité).
+ * - Temps réel coupé : polling rapproché (§26, §57).
+ * - Fusion par révision : quelle que soit la source (réponse REST en cache, message
+ *   temps réel, réponse à notre propre vote), la version la plus récente gagne.
  *
  * Les données restent en mémoire : si le réseau tombe, la dernière carte reste affichée
- * avec l'âge des données (§26). Rien n'est écrit sur le disque de l'appareil.
+ * avec l'âge des données. Rien n'est écrit sur le disque de l'appareil.
  */
 import type { PublicEvent } from '@safeway/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
+import { useRealtime } from './useRealtime';
 
-const DEFAULT_REFRESH_MS = 10_000;
-/**
- * Les lectures de zone sont mises en cache quelques secondes (navigateur + CDN) : pendant
- * ce délai, nos propres écritures priment sur les réponses potentiellement périmées.
- */
-const LOCAL_OVERRIDE_MS = 20_000;
+const POLL_FALLBACK_MS = 10_000;
+const POLL_LIVE_MS = 30_000;
+/** Durée pendant laquelle un retrait masque l'événement malgré des réponses en cache périmées. */
+const TOMBSTONE_MS = 60_000;
 
 export interface ZoneEventsState {
   events: PublicEvent[];
   /** Décalage horloge serveur - client (s). */
   clockSkew: number;
-  /** Date (ms, horloge client) de la dernière actualisation réussie. */
+  /** Date (ms, horloge client) de la dernière donnée reçue (REST ou temps réel). */
   lastSuccessAt: number | null;
-  error: boolean;
+  /** Temps réel actif. */
+  live: boolean;
   refresh: () => void;
   upsert: (event: PublicEvent) => void;
   remove: (id: string) => void;
@@ -30,83 +34,121 @@ export interface ZoneEventsState {
 }
 
 export function useZoneEvents(zones: readonly string[]): ZoneEventsState {
-  const [byZone, setByZone] = useState<Map<string, PublicEvent[]>>(new Map());
+  const [polled, setPolled] = useState<Map<string, PublicEvent[]>>(new Map());
+  const [pushed, setPushed] = useState<Map<string, PublicEvent>>(new Map());
+  const [tombstones, setTombstones] = useState<Map<string, number>>(new Map());
   const [clockSkew, setClockSkew] = useState(0);
   const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
-  const [error, setError] = useState(false);
   const zonesKey = zones.join(',');
   const zonesRef = useRef(zones);
   zonesRef.current = zones;
+
+  const upsertMany = useCallback((events: PublicEvent[]) => {
+    if (events.length === 0) return;
+    setPushed((prev) => {
+      const next = new Map(prev);
+      for (const event of events) {
+        const current = next.get(event.id);
+        if (!current || current.rev <= event.rev) next.set(event.id, event);
+      }
+      return next;
+    });
+  }, []);
+
+  const removeMany = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    const until = Date.now() + TOMBSTONE_MS;
+    setTombstones((prev) => {
+      const next = new Map([...prev].filter(([, t]) => t > Date.now()));
+      for (const id of ids) next.set(id, until);
+      return next;
+    });
+    setPushed((prev) => {
+      const next = new Map(prev);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const live = useRealtime(
+    zones,
+    useCallback(
+      (events: PublicEvent[], removed: string[]) => {
+        upsertMany(events);
+        removeMany(removed);
+        setLastSuccessAt(Date.now());
+      },
+      [upsertMany, removeMany],
+    ),
+  );
 
   const load = useCallback(async () => {
     const current = zonesRef.current;
     if (current.length === 0) return;
     const results = await Promise.allSettled(current.map((z) => api.zoneEvents(z)));
-    const ok = results.filter((r) => r.status === 'fulfilled').length;
-    setByZone((prev) => {
+    setPolled((prev) => {
       const next = new Map<string, PublicEvent[]>();
       results.forEach((r, i) => {
         const zone = current[i]!;
-        if (r.status === 'fulfilled') {
-          next.set(zone, r.value.events);
-        } else if (prev.has(zone)) {
-          next.set(zone, prev.get(zone)!); // on garde la dernière version connue
-        }
+        if (r.status === 'fulfilled') next.set(zone, r.value.events);
+        else if (prev.has(zone)) next.set(zone, prev.get(zone)!); // dernière version connue
       });
       return next;
     });
     const first = results.find((r) => r.status === 'fulfilled');
-    if (first?.status === 'fulfilled') setClockSkew(first.value.now - Math.floor(Date.now() / 1000));
-    if (ok > 0) setLastSuccessAt(Date.now());
-    setError(ok < results.length);
+    if (first?.status === 'fulfilled') {
+      setClockSkew(first.value.now - Math.floor(Date.now() / 1000));
+      setLastSuccessAt(Date.now());
+      // Les versions poussées expirées n'ont plus lieu d'être gardées.
+      const now = first.value.now;
+      setPushed((prev) => new Map([...prev].filter(([, e]) => e.expiresAt > now)));
+    }
   }, []);
 
+  // Polling : immédiat au changement de zones, puis à intervalle selon l'état du temps réel.
   useEffect(() => {
     void load();
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') void load();
-    }, DEFAULT_REFRESH_MS);
+    const timer = setInterval(
+      () => {
+        if (document.visibilityState === 'visible') void load();
+      },
+      live ? POLL_LIVE_MS : POLL_FALLBACK_MS,
+    );
     const onVisible = () => document.visibilityState === 'visible' && void load();
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [zonesKey, load]);
-
-  // id → version locale (null = supprimé) et date limite de priorité.
-  const [overrides, setOverrides] = useState<Map<string, { event: PublicEvent | null; until: number }>>(new Map());
-
-  const override = useCallback((id: string, event: PublicEvent | null) => {
-    setOverrides((prev) => {
-      const now = Date.now();
-      const next = new Map([...prev].filter(([, o]) => o.until > now));
-      next.set(id, { event, until: now + LOCAL_OVERRIDE_MS });
-      return next;
-    });
-  }, []);
-
-  const upsert = useCallback((event: PublicEvent) => override(event.id, event), [override]);
-  const remove = useCallback((id: string) => override(id, null), [override]);
+    // `live` : à la (re)connexion on resynchronise aussitôt ce qui a pu être manqué.
+  }, [zonesKey, live, load]);
 
   const clear = useCallback(() => {
-    setByZone(new Map());
-    setOverrides(new Map());
+    setPolled(new Map());
+    setPushed(new Map());
+    setTombstones(new Map());
     setLastSuccessAt(null);
   }, []);
 
-  // Fusion serveur + écritures locales récentes, dédoublonnée par id.
-  // Recalculée à chaque réponse serveur, ce qui purge aussi les priorités échues.
   const events = useMemo(() => {
-    const merged = new Map([...byZone.values()].flat().map((e) => [e.id, e]));
-    const now = Date.now();
-    for (const [id, o] of overrides) {
-      if (o.until <= now) continue;
-      if (o.event) merged.set(id, o.event);
-      else merged.delete(id);
+    const merged = new Map([...polled.values()].flat().map((e) => [e.id, e]));
+    for (const [id, event] of pushed) {
+      const current = merged.get(id);
+      if (!current || current.rev < event.rev) merged.set(id, event);
     }
+    const now = Date.now();
+    for (const [id, until] of tombstones) if (until > now) merged.delete(id);
     return [...merged.values()];
-  }, [byZone, overrides]);
+  }, [polled, pushed, tombstones]);
 
-  return { events, clockSkew, lastSuccessAt, error, refresh: () => void load(), upsert, remove, clear };
+  return {
+    events,
+    clockSkew,
+    lastSuccessAt,
+    live,
+    refresh: () => void load(),
+    upsert: useCallback((event: PublicEvent) => upsertMany([event]), [upsertMany]),
+    remove: useCallback((id: string) => removeMany([id]), [removeMany]),
+    clear,
+  };
 }

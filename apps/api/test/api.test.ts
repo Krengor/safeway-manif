@@ -1,4 +1,4 @@
-import { CSRF_HEADER, toEventCell, zoneOf, type PublicEvent } from '@safeway/shared';
+import { CSRF_HEADER, toEventCell, zoneChannel, zoneOf, type PublicEvent } from '@safeway/shared';
 import type { FastifyInstance } from 'fastify';
 import { gridDisk } from 'h3-js';
 import { randomUUID } from 'node:crypto';
@@ -108,7 +108,7 @@ describe('signalements', () => {
     expect(res.statusCode).toBe(201);
     const event: PublicEvent = res.json().event;
     expect(event).toMatchObject({ type: 'PASSAGE_BLOQUE', cell: NEAR, conf: 1, inv: 0 });
-    expect(Object.keys(event).sort()).toEqual(['cell', 'conf', 'createdAt', 'expiresAt', 'id', 'inv', 'lastConfAt', 'type']);
+    expect(Object.keys(event).sort()).toEqual(['cell', 'conf', 'createdAt', 'expiresAt', 'id', 'inv', 'lastConfAt', 'rev', 'type']);
 
     // La cellule de présence n'apparaît nulle part en base.
     const [row] = await sql`SELECT * FROM events WHERE id = ${event.id}`;
@@ -189,6 +189,66 @@ describe('votes', () => {
     expect(tokens).toHaveLength(2);
     expect(tokens[0]!.actor_token.equals(tokens[1]!.actor_token)).toBe(false);
     expect(JSON.stringify(tokens)).not.toContain(voter.id);
+  });
+});
+
+describe('temps réel', () => {
+  async function listen(zone: string) {
+    const sub = redis.duplicate();
+    if (sub.status !== 'ready') await new Promise((resolve) => sub.once('ready', resolve));
+    const received: unknown[] = [];
+    sub.on('message', (_channel, message) => received.push(JSON.parse(message)));
+    await sub.subscribe(zoneChannel(zone));
+    return { received, close: () => sub.disconnect() };
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+
+  it('publie création et votes sur le canal de la zone, avec une révision croissante', async () => {
+    const bus = await listen(zoneOf(HERE));
+    try {
+      const author = await newUser();
+      const voter = await newUser();
+      const event = (await post('/api/events', author.cookie, { type: 'FOULE_DENSE', cell: HERE, presenceCell: HERE })).json()
+        .event as PublicEvent;
+      await post(`/api/events/${event.id}/confirm`, voter.cookie, { presenceCell: HERE });
+      await settle();
+      expect(bus.received).toEqual([
+        { event: expect.objectContaining({ id: event.id, conf: 1, rev: 1 }) },
+        { event: expect.objectContaining({ id: event.id, conf: 2, rev: 2 }) },
+      ]);
+    } finally {
+      bus.close();
+    }
+  });
+
+  it('publie le retrait d’un signalement invalidé', async () => {
+    const author = await newUser();
+    const event = (await post('/api/events', author.cookie, { type: 'DEBRIS', cell: HERE, presenceCell: HERE })).json().event;
+    const bus = await listen(zoneOf(HERE));
+    try {
+      for (let i = 0; i < 3; i++) {
+        const voter = await newUser();
+        await post(`/api/events/${event.id}/invalidate`, voter.cookie, { presenceCell: HERE });
+      }
+      await settle();
+      expect(bus.received.at(-1)).toEqual({ removed: event.id });
+    } finally {
+      bus.close();
+    }
+  });
+
+  it('ne publie aucune donnée de présence ni d’utilisateur', async () => {
+    const bus = await listen(zoneOf(HERE));
+    try {
+      const user = await newUser();
+      await post('/api/events', user.cookie, { type: 'INCENDIE', cell: NEAR, presenceCell: HERE });
+      await settle();
+      const raw = JSON.stringify(bus.received);
+      expect(raw).not.toContain(HERE);
+      expect(raw).not.toContain(user.id);
+    } finally {
+      bus.close();
+    }
   });
 });
 

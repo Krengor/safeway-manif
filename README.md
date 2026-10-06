@@ -33,6 +33,7 @@ Détails : [docs/architecture.md](docs/architecture.md) · [docs/privacy.md](doc
 ```text
 apps/web         PWA — Vite, React, TypeScript, MapLibre GL, PMTiles, Tailwind
 apps/api         API — Fastify, TypeScript, PostgreSQL (+PostGIS), Redis
+apps/realtime-gateway  WebSocket par zone H3, relais Redis Pub/Sub, regroupement et contre-pression
 packages/shared  Types, catalogue des signalements, règles H3, score de confiance
 infrastructure   Docker Compose (dev et prod), Caddy
 tests/load       Scénarios de charge k6
@@ -50,7 +51,8 @@ npm run dev:infra           # PostgreSQL/PostGIS + Redis (ports liés à 127.0.0
 npm run migrate
 npm run fetch-map-assets -w @safeway/web   # tuiles + polices (Besançon par défaut, voir SAFEWAY_BBOX)
 npm run dev:api             # http://127.0.0.1:4380
-npm run dev:web             # http://localhost:5173
+npm run dev:gateway         # temps réel, ws://127.0.0.1:4381/ws
+npm run dev:web             # http://localhost:5173 (proxifie /api et /ws)
 ```
 
 Les passkeys fonctionnent sur `localhost` sans HTTPS. Pour tester sur téléphone, il faut un domaine en HTTPS
@@ -67,7 +69,7 @@ Les tests d'API tournent sur une vraie base PostgreSQL/Redis (celle de `npm run 
 ## Feuille de route
 
 - **V0.1** (en cours) — compte pseudo + passkey, carte, Mode Manif, signalements, confirmations, expiration, couleur des rues
-- **V0.2** — routage sécurisé, réputation, temps réel (gateway WebSocket par zone H3), alertes sur trajet
+- **V0.2** — temps réel (gateway WebSocket par zone H3) ✅, routage sécurisé, réputation, alertes sur trajet
 - **V0.3** — anti-abus avancé, réseau dégradé, modération, tests de charge 500k
 
 Aucune mention « supporte 500 000 utilisateurs » ne sera faite sans rapport de charge publié dans

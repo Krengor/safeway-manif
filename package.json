@@ -17,6 +17,7 @@
     "dev:infra:down": "docker compose --env-file .env -f infrastructure/docker/docker-compose.dev.yml down",
     "dev:api": "npm run dev -w @safeway/api",
     "dev:web": "npm run dev -w @safeway/web",
+    "dev:gateway": "npm run dev -w @safeway/realtime-gateway",
     "migrate": "npm run migrate -w @safeway/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
