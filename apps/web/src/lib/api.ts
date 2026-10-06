@@ -1,6 +1,8 @@
 import {
   API_PREFIX,
   CSRF_HEADER,
+  ROUTE_PATH,
+  type RouteResponse,
   type ApiError,
   type CreateEventBody,
   type MapStatusResponse,
@@ -22,14 +24,15 @@ export class ApiRequestError extends Error {
 
 const TIMEOUT_MS = 8000;
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, anonymous = false): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(API_PREFIX + path, {
       method,
-      credentials: 'same-origin',
+      // Requêtes anonymes (itinéraire) : le cookie de session n'est jamais envoyé.
+      credentials: anonymous ? 'omit' : 'same-origin',
       signal: controller.signal,
       headers: {
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
@@ -76,4 +79,8 @@ export const api = {
     request<VoteResponse>('POST', `/events/${encodeURIComponent(id)}/confirm`, { presenceCell }),
   invalidate: (id: string, presenceCell: string) =>
     request<VoteResponse>('POST', `/events/${encodeURIComponent(id)}/invalidate`, { presenceCell }),
+
+  /** Itinéraire : coordonnées précises indispensables, mais requête anonyme et jamais conservée. */
+  route: (from: [number, number], to: [number, number]) =>
+    request<RouteResponse>('POST', ROUTE_PATH.slice(API_PREFIX.length), { from, to }, true),
 };

@@ -64,6 +64,36 @@ services:
       redis: { condition: service_started }
     networks: [backend]
 
+  # Moteur d'itinéraire. Le graphe se construit au premier démarrage à partir du .osm.pbf
+  # placé dans infrastructure/valhalla/custom_files (ou construit ailleurs puis copié).
+  # Aucun journal : les requêtes contiennent des points de départ et d'arrivée.
+  valhalla:
+    image: ghcr.io/valhalla/valhalla-scripted:latest
+    restart: unless-stopped
+    environment:
+      use_tiles_ignore_pbf: "True"
+      build_elevation: "False"
+      build_admins: "True"
+      build_time_zones: "False"
+      serve_tiles: "True"
+      server_threads: "2"
+    volumes:
+      - ../valhalla/custom_files:/custom_files
+    logging:
+      driver: none
+    networks: [backend]
+
+  routing:
+    build: { context: ../.., dockerfile: infrastructure/docker/routing.Dockerfile }
+    restart: unless-stopped
+    environment:
+      PUBLIC_ORIGIN: https://${SAFEWAY_DOMAIN}
+      VALHALLA_URL: http://valhalla:8002
+      MAP_API_URL: http://api:3000
+      TRUST_PROXY_HOPS: 1
+    depends_on: [valhalla, api]
+    networks: [backend]
+
   web:
     build: { context: ../.., dockerfile: infrastructure/docker/web.Dockerfile }
     restart: unless-stopped
@@ -78,7 +108,7 @@ services:
       - ../../apps/web/public/fonts:/srv/map/fonts:ro
       - ../../apps/web/public/sprites:/srv/map/sprites:ro
       - caddy_data:/data
-    depends_on: [api, gateway]
+    depends_on: [api, gateway, routing]
     networks: [backend]
 
 networks:

@@ -24,6 +24,7 @@ Aucun itinéraire n'est garanti « sûr ».
 | Compte | Pseudo + clé **publique** de passkey. Pas d'e-mail, de téléphone ni de mot de passe. |
 | Adresses IP | Jamais journalisées ; pseudonymisées par HMAC pour le rate limiting, TTL de quelques minutes. |
 | Tuiles cartographiques | Auto-hébergées (PMTiles) : aucun fournisseur tiers ne voit la zone consultée. |
+| Itinéraire | Départ/arrivée envoyés à un service dédié **sans cookie** ni identité, jamais journalisés ni conservés. Le suivi des alertes sur le trajet se fait sur l'appareil. |
 | Cache hors ligne | Seule la coquille de l'app est mise en cache ; jamais les zones consultées. |
 
 Détails : [docs/architecture.md](docs/architecture.md) · [docs/privacy.md](docs/privacy.md)
@@ -34,6 +35,7 @@ Détails : [docs/architecture.md](docs/architecture.md) · [docs/privacy.md](doc
 apps/web         PWA — Vite, React, TypeScript, MapLibre GL, PMTiles, Tailwind
 apps/api         API — Fastify, TypeScript, PostgreSQL (+PostGIS), Redis
 apps/realtime-gateway  WebSocket par zone H3, relais Redis Pub/Sub, regroupement et contre-pression
+apps/routing-service   Itinéraires piétons évitant les zones signalées (Valhalla), sans identité
 packages/shared  Types, catalogue des signalements, règles H3, score de confiance
 infrastructure   Docker Compose (dev et prod), Caddy
 tests/load       Scénarios de charge k6
@@ -52,8 +54,13 @@ npm run migrate
 npm run fetch-map-assets -w @safeway/web   # tuiles + polices (Besançon par défaut, voir SAFEWAY_BBOX)
 npm run dev:api             # http://127.0.0.1:4380
 npm run dev:gateway         # temps réel, ws://127.0.0.1:4381/ws
+npm run dev:routing         # itinéraires, http://127.0.0.1:4382 (nécessite Valhalla, voir ci-dessous)
 npm run dev:web             # http://localhost:5173 (proxifie /api et /ws)
 ```
+
+Itinéraires : placer un extrait OpenStreetMap (`.osm.pbf`, par ex. une région Geofabrik) dans
+`infrastructure/valhalla/custom_files/`, puis `npm run dev:infra` : Valhalla construit le graphe piéton au
+premier démarrage (quelques minutes).
 
 Les passkeys fonctionnent sur `localhost` sans HTTPS. Pour tester sur téléphone, il faut un domaine en HTTPS
 (WebAuthn l'exige) : voir [infrastructure/README.md](infrastructure/README.md).
@@ -69,7 +76,7 @@ Les tests d'API tournent sur une vraie base PostgreSQL/Redis (celle de `npm run 
 ## Feuille de route
 
 - **V0.1** (en cours) — compte pseudo + passkey, carte, Mode Manif, signalements, confirmations, expiration, couleur des rues
-- **V0.2** — temps réel (gateway WebSocket par zone H3) ✅, routage sécurisé, réputation, alertes sur trajet
+- **V0.2** — temps réel (gateway WebSocket par zone H3) ✅, routage sécurisé ✅, alertes sur trajet ✅, réputation
 - **V0.3** — anti-abus avancé, réseau dégradé, modération, tests de charge 500k
 
 Aucune mention « supporte 500 000 utilisateurs » ne sera faite sans rapport de charge publié dans

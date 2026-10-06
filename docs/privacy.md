@@ -14,6 +14,8 @@ pourrait en tirer.
 | Jeton de vote `HMAC(secret, user:event)` | PostgreSQL `event_votes` | idem événement | avec `VOTE_TOKEN_SECRET` : savoir si un compte donné a voté sur un événement **actif** |
 | Session | Redis, `sha256(jeton) → user_id` | 30 jours glissants | aucune session utilisable (seule l'empreinte est stockée) |
 | Compteur de rate limiting | Redis, clé `HMAC(secret, ip)` | 1 à 10 min | IP récentes, seulement avec `RATE_LIMIT_SECRET` |
+| Départ / arrivée d'un itinéraire | requête au routing-service (sans cookie) puis Valhalla, en mémoire | durée du calcul | aucune trace persistante ; ni lien avec un compte (pas de cookie), ni journal (Valhalla sans logs) |
+| Trajet en cours, alertes | mémoire du téléphone | jusqu'à l'arrêt du trajet ou du Mode Manif | aucune (jamais transmis) |
 | Logs | stdout | selon l'hébergeur | méthode, route, statut, durée |
 
 ## Point d'attention connu

@@ -18,6 +18,7 @@
     "dev:api": "npm run dev -w @safeway/api",
     "dev:web": "npm run dev -w @safeway/web",
     "dev:gateway": "npm run dev -w @safeway/realtime-gateway",
+    "dev:routing": "npm run dev -w @safeway/routing-service",
     "migrate": "npm run migrate -w @safeway/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",

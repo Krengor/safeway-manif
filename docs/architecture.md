@@ -58,6 +58,29 @@ API ──PUBLISH ev:<zone>──► Redis Pub/Sub ──► realtime-gateway (N
 
 Mesuré en local : ~230 ms entre l'écriture d'un signalement et son affichage chez un autre client.
 
+## Routage sécurisé (V0.2)
+
+```text
+PWA ──POST /api/route {from,to} (sans cookie)──► Caddy (retire Cookie) ──► routing-service
+                                                        │  zones de danger : GET /api/map/zones/* (public)
+                                                        └► Valhalla (pedestrian, exclude_polygons)
+```
+
+- Le routing-service n'a ni base de données ni session : il ne sait pas qui demande un trajet. Il lit la
+  couche de danger exactement comme un client (endpoint public, cache 5 s).
+- Jusqu'à trois calculs en parallèle : direct, en évitant les zones dangereuses, en évitant aussi les zones
+  incertaines. Retenu : le plus prudent tant qu'il reste ≤ 1,5 × (tout éviter) ou ≤ 3 × (dangers seuls) la
+  longueur du direct ; sinon le direct, avec le risque affiché explicitement.
+- Les zones sont exclues sous forme de polygones (cellules H3 fusionnées) ; les cellules de départ et
+  d'arrivée ne sont jamais exclues.
+- Robustesse : délai de 4 s par calcul, disjoncteur après 5 pannes (30 s), réponse 503 claire ; 20 calculs
+  par minute et par IP (compteur en mémoire, jamais écrit).
+- Les allers-retours parasites du moteur en début/fin de trajet sont supprimés (`trimBacktracks`).
+- Alertes : l'appareil compare les cellules de son trajet aux signalements qu'il reçoit déjà en temps réel ;
+  rien n'est renvoyé au serveur. Le trajet est effacé à l'arrêt ou dès que la localisation est coupée.
+- Formulation : « Itinéraire basé sur les informations communautaires disponibles » ; jamais « sûr ».
+  Le tracé est bleu (pas vert) sans zone signalée, en tirets orange/rouges sinon.
+
 ## Score et couleurs
 
 [`packages/shared/src/confidence.ts`](../packages/shared/src/confidence.ts) — partagé client/serveur.

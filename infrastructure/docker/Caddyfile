@@ -25,6 +25,16 @@
 		-Server
 	}
 
+	# Itinéraire : service séparé qui ne doit JAMAIS connaître l'identité de l'utilisateur.
+	# Le cookie de session est retiré ici (défense en plus du `credentials: 'omit'` du client).
+	handle /api/route {
+		reverse_proxy routing:3002 {
+			header_up -Cookie
+			header_up -Authorization
+			health_uri /health
+		}
+	}
+
 	# API : les en-têtes X-Forwarded-For servent uniquement au rate limiting (TRUST_PROXY_HOPS=1).
 	handle /api/* {
 		reverse_proxy api:3000 {

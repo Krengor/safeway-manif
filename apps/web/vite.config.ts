@@ -5,6 +5,13 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 // Même origine pour l'API et le temps réel en local (comme derrière Caddy en production).
 const devProxy = {
+  // Ordre important : la route d'itinéraire part vers le routing-service, cookies retirés
+  // (comme le fait Caddy en production) — ce service ne doit jamais voir d'identité.
+  '/api/route': {
+    target: 'http://127.0.0.1:4382',
+    configure: (proxy: { on: (event: 'proxyReq', cb: (req: { removeHeader(name: string): void }) => void) => void }) =>
+      proxy.on('proxyReq', (req) => req.removeHeader('cookie')),
+  },
   '/api': 'http://127.0.0.1:4380',
   '/ws': { target: 'ws://127.0.0.1:4381', ws: true },
 };

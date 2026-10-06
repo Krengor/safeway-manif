@@ -1,4 +1,4 @@
-import { EVENT_META, MAX_ZONES_PER_REQUEST, ZONE_RES } from '@safeway/shared';
+import { EVENT_META, MAX_ZONES_PER_REQUEST, ZONE_RES, type RouteRisk } from '@safeway/shared';
 import { POLYGON_TO_CELLS_FLAGS, cellToLatLng, polygonToCellsExperimental } from 'h3-js';
 import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec';
 import { Map as MlMap, Marker, addProtocol, setWorkerUrl, type GeoJSONSource } from 'maplibre-gl';
@@ -32,14 +32,35 @@ export interface MapViewHandle {
   recenter(position: LocalPosition): void;
 }
 
+export interface MapRoute {
+  shape: [number, number][];
+  risk: RouteRisk;
+}
+
 interface Props {
   cells: CellSummary[];
   position: LocalPosition | null;
   dark: boolean;
+  /** Itinéraire affiché (mémoire locale uniquement). */
+  route: MapRoute | null;
+  destination: LocalPosition | null;
   /** Zones H3 visibles, ou null si la vue est trop large pour charger les signalements. */
   onZonesChange(zones: string[] | null): void;
   onSelectCell(cell: string): void;
   onLongPress(lngLat: { lng: number; lat: number }): void;
+  /** Appui simple sur la carte (choix de destination). */
+  onTap(lngLat: { lng: number; lat: number }): void;
+}
+
+/** Bleu neutre pour un trajet sans zone signalée : jamais de vert, qui suggérerait « sûr ». */
+const ROUTE_COLORS: Record<RouteRisk, string> = { clear: '#2563eb', uncertain: '#ea580c', danger: '#dc2626' };
+
+function routeData(route: MapRoute | null): GeoJSON.FeatureCollection {
+  if (!route) return EMPTY;
+  return {
+    type: 'FeatureCollection',
+    features: [{ type: 'Feature', properties: { risk: route.risk }, geometry: { type: 'LineString', coordinates: route.shape } }],
+  };
 }
 
 function statusColor(dark: boolean): ExpressionSpecification {
@@ -74,6 +95,8 @@ function addOverlayLayers(map: MlMap, dark: boolean) {
   map.addSource('sw-cells', { type: 'geojson', data: EMPTY });
   map.addSource('sw-streets', { type: 'geojson', data: EMPTY });
   map.addSource('sw-me', { type: 'geojson', data: EMPTY });
+  map.addSource('sw-route', { type: 'geojson', data: EMPTY });
+  map.addSource('sw-dest', { type: 'geojson', data: EMPTY });
   map.addLayer({
     id: 'sw-cells-fill',
     type: 'fill',
@@ -96,6 +119,31 @@ function addOverlayLayers(map: MlMap, dark: boolean) {
       'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 13, 3, 16, 7, 19, 22],
       'line-opacity': 0.9,
     },
+  });
+  map.addLayer({
+    id: 'sw-route-casing',
+    type: 'line',
+    source: 'sw-route',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 7, 18, 14] },
+  });
+  map.addLayer({
+    id: 'sw-route',
+    type: 'line',
+    source: 'sw-route',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': ['match', ['get', 'risk'], 'danger', ROUTE_COLORS.danger, 'uncertain', ROUTE_COLORS.uncertain, ROUTE_COLORS.clear],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 13, 4, 18, 9],
+      // Trajet à risque : tirets, pour ne pas dépendre uniquement de la couleur (§25).
+      'line-dasharray': ['match', ['get', 'risk'], 'clear', ['literal', [1, 0]], ['literal', [2, 1]]],
+    },
+  });
+  map.addLayer({
+    id: 'sw-dest',
+    type: 'circle',
+    source: 'sw-dest',
+    paint: { 'circle-radius': 9, 'circle-color': '#111827', 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 },
   });
   map.addLayer({
     id: 'sw-me-halo',
@@ -152,12 +200,15 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(props, 
 
     // 'style.load' : premier chargement ET changement de thème (setStyle efface nos calques).
     map.on('style.load', () => {
-      const { dark, cells, position } = latest.current;
+      const { dark, cells, position, route, destination } = latest.current;
       addOverlayLayers(map, dark);
       map.getSource<GeoJSONSource>('sw-cells')?.setData(cellPolygons(cells));
       map.getSource<GeoJSONSource>('sw-me')?.setData(positionData(position));
+      map.getSource<GeoJSONSource>('sw-route')?.setData(routeData(route));
+      map.getSource<GeoJSONSource>('sw-dest')?.setData(positionData(destination));
       scheduleStreets.current();
     });
+    map.on('click', (e) => latest.current.onTap({ lng: e.lngLat.lng, lat: e.lngLat.lat }));
     map.on('load', () => latest.current.onZonesChange(visibleZones(map)));
     map.on('moveend', () => {
       latest.current.onZonesChange(visibleZones(map));
@@ -245,6 +296,28 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(props, 
       }
     }
   }, [props.cells]);
+
+  // Itinéraire et destination : affichage local ; à la mise à jour on cadre le trajet.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.getSource<GeoJSONSource>('sw-route')?.setData(routeData(props.route));
+    if (props.route && props.route.shape.length > 1) {
+      const lngs = props.route.shape.map((p) => p[0]);
+      const lats = props.route.shape.map((p) => p[1]);
+      map.fitBounds(
+        [
+          [Math.min(...lngs), Math.min(...lats)],
+          [Math.max(...lngs), Math.max(...lats)],
+        ],
+        { padding: { top: 140, bottom: 220, left: 40, right: 40 }, maxZoom: 17, duration: 600 },
+      );
+    }
+  }, [props.route]);
+
+  useEffect(() => {
+    mapRef.current?.getSource<GeoJSONSource>('sw-dest')?.setData(positionData(props.destination));
+  }, [props.destination]);
 
   // Point « vous êtes ici » : affiché localement, jamais transmis.
   useEffect(() => {
