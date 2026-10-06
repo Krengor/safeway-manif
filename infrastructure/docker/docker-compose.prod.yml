@@ -48,6 +48,7 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       VOTE_TOKEN_SECRET: ${VOTE_TOKEN_SECRET:?}
       RATE_LIMIT_SECRET: ${RATE_LIMIT_SECRET:?}
+      EVENT_SIGNING_KEY: ${EVENT_SIGNING_KEY:?}
       TRUST_PROXY_HOPS: 1
     depends_on:
       migrate: { condition: service_completed_successfully }

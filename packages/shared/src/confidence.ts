@@ -24,6 +24,8 @@ export interface EventCounters {
   /** Epoch secondes. */
   lastConfAt: number;
   expiresAt: number;
+  /** Reçu hors réseau sans signature valide : au mieux « incertain ». */
+  unverified?: boolean;
 }
 
 type Weights = Pick<EventCounters, 'conf' | 'inv' | 'supportW' | 'againstW'>;
@@ -78,6 +80,11 @@ export function computeZoneStatus(events: readonly EventCounters[], now: number)
     if (now >= ev.expiresAt) continue;
     const { category } = EVENT_META[ev.type];
     if (category === 'info') continue;
+    // Information non vérifiable (reçue hors réseau sans signature) : vigilance seulement.
+    if (ev.unverified) {
+      hasOrange = true;
+      continue;
+    }
     const confidence = computeConfidence(ev, now);
     const contested = isContested(ev);
 

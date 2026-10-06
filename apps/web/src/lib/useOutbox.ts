@@ -54,6 +54,10 @@ export function useOutbox(onSent: (event: PublicEvent | null, item: OutboxItem) 
 
   return {
     pending: items.length,
+    /** Signalements pas encore envoyés : partageables hors réseau, en « non vérifiés ». */
+    pendingReports: items.flatMap((i) =>
+      i.kind === 'report' ? [{ type: i.body.type, cell: i.body.cell, createdAt: Math.floor(i.createdAt / 1000) }] : [],
+    ),
     add: useCallback((item: NewOutboxItem) => {
       setItems((current) => [...current, { ...item, id: crypto.randomUUID(), createdAt: Date.now() } as OutboxItem]);
     }, []),

@@ -24,6 +24,7 @@ import type { Sql } from '../db.js';
 import { noopBus, type EventBus } from '../lib/bus.js';
 import { actorToken } from '../lib/crypto.js';
 import { epoch } from '../lib/http.js';
+import type { EventSigner } from '../lib/signing.js';
 import { noopLinks, type ReputationLinks, type SettledEvent } from './reputation.js';
 
 type Tx = TransactionSql;
@@ -72,12 +73,15 @@ export interface EventServiceOptions {
   links?: ReputationLinks;
   /** Règlement de la réputation des signalements purgés. */
   onSettled?: (events: SettledEvent[]) => Promise<unknown>;
+  /** Signature des signalements publics (vérifiable hors ligne). */
+  signer?: EventSigner;
 }
 
 export class EventService {
   private readonly bus: EventBus;
   private readonly links: ReputationLinks;
   private readonly onSettled: (events: SettledEvent[]) => Promise<unknown>;
+  private readonly signer: EventSigner | null;
 
   constructor(
     private readonly sql: Sql,
@@ -87,6 +91,13 @@ export class EventService {
     this.bus = options.bus ?? noopBus;
     this.links = options.links ?? noopLinks;
     this.onSettled = options.onSettled ?? (async () => {});
+    this.signer = options.signer ?? null;
+  }
+
+  /** Représentation publique, signée si un signataire est configuré. */
+  private pub(row: EventRow): PublicEvent {
+    const event = toPublic(row);
+    return this.signer ? this.signer.sign(event) : event;
   }
 
   async listByZones(zones: readonly string[]): Promise<PublicEvent[]> {
@@ -94,13 +105,13 @@ export class EventService {
       SELECT ${this.sql.unsafe(COLUMNS)} FROM events
       WHERE zone_id = ANY(${zones as string[]}) AND expires_at > now()
       LIMIT 5000`;
-    return rows.map(toPublic);
+    return rows.map((row) => this.pub(row));
   }
 
   async get(id: string): Promise<PublicEvent | null> {
     const [row] = await this.sql<EventRow[]>`
       SELECT ${this.sql.unsafe(COLUMNS)} FROM events WHERE id = ${id} AND expires_at > now()`;
-    return row ? toPublic(row) : null;
+    return row ? this.pub(row) : null;
   }
 
   /** Un signalement de ce type est-il déjà actif sur la cellule ? (création ou confirmation) */
@@ -149,14 +160,14 @@ export class EventService {
         await tx`
           INSERT INTO event_votes (event_id, actor_token, vote, weight)
           VALUES (${inserted.id}, ${actorToken(this.voteSecret, userId, inserted.id)}, 1, ${weight})`;
-        return { event: toPublic(inserted), created: true };
+        return { event: this.pub(inserted), created: true };
       }
 
       const [existing] = await tx<EventRow[]>`
         SELECT ${tx.unsafe(COLUMNS)} FROM events WHERE cell_id = ${cell} AND type = ${type} FOR UPDATE`;
       if (!existing) throw new Error('signalement concurrent introuvable');
       const event = await this.applyVote(tx, existing, userId, 1, weight);
-      return { event: event ?? toPublic(existing), created: false };
+      return { event: event ?? this.pub(existing), created: false };
     });
 
     if (result.created) this.links.recordAuthor(result.event.id, userId);
@@ -191,7 +202,7 @@ export class EventService {
     const token = actorToken(this.voteSecret, userId, row.id);
     const [previous] = await tx<{ vote: number; weight: number }[]>`
       SELECT vote, weight FROM event_votes WHERE event_id = ${row.id} AND actor_token = ${token}`;
-    if (previous?.vote === vote) return toPublic(row);
+    if (previous?.vote === vote) return this.pub(row);
 
     await tx`
       INSERT INTO event_votes (event_id, actor_token, vote, weight) VALUES (${row.id}, ${token}, ${vote}, ${weight})
@@ -222,7 +233,7 @@ export class EventService {
       WHERE id = ${row.id}
       RETURNING ${tx.unsafe(COLUMNS)}`;
     if (!updated) return null;
-    return epoch(updated.expires_at) <= now ? null : toPublic(updated);
+    return epoch(updated.expires_at) <= now ? null : this.pub(updated);
   }
 
   /** Liste complète des signalements actifs, pour la modération (données déjà publiques). */
@@ -230,7 +241,7 @@ export class EventService {
     const rows = await this.sql<(EventRow & { zone_id: string })[]>`
       SELECT ${this.sql.unsafe(COLUMNS)}, zone_id FROM events
       WHERE expires_at > now() ORDER BY created_at DESC LIMIT ${limit}`;
-    return rows.map((row) => ({ ...toPublic(row), zone: row.zone_id }));
+    return rows.map((row) => ({ ...this.pub(row), zone: row.zone_id }));
   }
 
   /** Suppression par la modération : retirée aussitôt chez tous les clients. */

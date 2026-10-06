@@ -18,6 +18,8 @@ const POLL_FALLBACK_MS = 10_000;
 const POLL_LIVE_MS = 30_000;
 /** Durée pendant laquelle un retrait masque l'événement malgré des réponses en cache périmées. */
 const TOMBSTONE_MS = 60_000;
+/** Au-delà, le réseau est jugé saturé (réponses publiques normalement < 1 s). */
+const SLOW_RESPONSE_MS = 5000;
 
 export interface ZoneEventsState {
   events: PublicEvent[];
@@ -27,6 +29,10 @@ export interface ZoneEventsState {
   lastSuccessAt: number | null;
   /** Temps réel actif. */
   live: boolean;
+  /** Réseau saturé ou coupé : chargements en échec répétés, ou très lents. */
+  degraded: boolean;
+  /** Ajoute des signalements reçus hors réseau (déjà vérifiés ou marqués non vérifiés). */
+  importShared: (events: PublicEvent[]) => void;
   refresh: () => void;
   upsert: (event: PublicEvent) => void;
   remove: (id: string) => void;
@@ -39,6 +45,9 @@ export function useZoneEvents(zones: readonly string[]): ZoneEventsState {
   const [tombstones, setTombstones] = useState<Map<string, number>>(new Map());
   const [clockSkew, setClockSkew] = useState(0);
   const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
+  // Santé du réseau, pour proposer le partage hors réseau quand il sature.
+  const [failures, setFailures] = useState(0);
+  const [slow, setSlow] = useState(false);
   const zonesKey = zones.join(',');
   const zonesRef = useRef(zones);
   zonesRef.current = zones;
@@ -85,7 +94,11 @@ export function useZoneEvents(zones: readonly string[]): ZoneEventsState {
   const load = useCallback(async () => {
     const current = zonesRef.current;
     if (current.length === 0) return;
+    const startedAt = Date.now();
     const results = await Promise.allSettled(current.map((z) => api.zoneEvents(z)));
+    const allFailed = results.every((r) => r.status === 'rejected');
+    setFailures((n) => (allFailed ? n + 1 : 0));
+    setSlow(!allFailed && Date.now() - startedAt > SLOW_RESPONSE_MS);
     setPolled((prev) => {
       const next = new Map<string, PublicEvent[]>();
       results.forEach((r, i) => {
@@ -146,6 +159,8 @@ export function useZoneEvents(zones: readonly string[]): ZoneEventsState {
     clockSkew,
     lastSuccessAt,
     live,
+    degraded: failures >= 2 || slow,
+    importShared: upsertMany,
     refresh: () => void load(),
     upsert: useCallback((event: PublicEvent) => upsertMany([event]), [upsertMany]),
     remove: useCallback((id: string) => removeMany([id]), [removeMany]),

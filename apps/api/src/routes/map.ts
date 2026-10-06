@@ -1,4 +1,10 @@
-import { isZoneCell, type MapStatusResponse, type ZoneEventsResponse } from '@safeway/shared';
+import {
+  SIGNING_KEY_PATH,
+  isZoneCell,
+  type MapStatusResponse,
+  type SigningKeyResponse,
+  type ZoneEventsResponse,
+} from '@safeway/shared';
 import type { FastifyInstance } from 'fastify';
 import { HttpError } from '../lib/http.js';
 import { RATE_RULES } from '../lib/rateLimit.js';
@@ -18,6 +24,12 @@ export async function mapRoutes(app: FastifyInstance, ctx: AppContext): Promise<
     const events = await ctx.events.listByZones([zone]);
     reply.header('cache-control', 'public, max-age=5, stale-while-revalidate=10');
     return { now: Math.floor(Date.now() / 1000), zones: [zone], events };
+  });
+
+  /** Clé publique de signature : mise en cache par le client pour vérifier hors ligne. */
+  app.get(SIGNING_KEY_PATH, async (_request, reply): Promise<SigningKeyResponse> => {
+    reply.header('cache-control', 'public, max-age=86400');
+    return ctx.signer.publicKey;
   });
 
   app.get('/map/status', async (_request, reply): Promise<MapStatusResponse> => {

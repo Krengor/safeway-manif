@@ -15,6 +15,7 @@ import { RedisBus } from './lib/bus.js';
 import { rateKey } from './lib/crypto.js';
 import { HttpError } from './lib/http.js';
 import { RateLimiter } from './lib/rateLimit.js';
+import { EventSigner } from './lib/signing.js';
 import { SurgeDetector } from './lib/surge.js';
 import { SESSION_TTL_SECONDS, SessionStore } from './lib/sessions.js';
 import type { Redis } from './redis.js';
@@ -36,6 +37,7 @@ export interface AppContext {
   events: EventService;
   reputation: ReputationService;
   surge: SurgeDetector;
+  signer: EventSigner;
   sessionCookie: string;
   sessionTtl: number;
   cookieOptions: CookieSerializeOptions;
@@ -77,6 +79,7 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
 
   const sessions = new SessionStore(redis);
   const reputationLinks = new RedisReputationLinks(redis);
+  const signer = new EventSigner(config.EVENT_SIGNING_KEY);
   const ctx: AppContext = {
     config,
     sql,
@@ -86,7 +89,9 @@ export async function buildApp(deps: { config: Config; sql: Sql; redis: Redis })
     events: new EventService(sql, config.VOTE_TOKEN_SECRET, {
       bus: new RedisBus(redis),
       links: reputationLinks,
+      signer,
     }),
+    signer,
     reputation: new ReputationService(sql, reputationLinks, redis),
     surge: new SurgeDetector(redis),
     sessionCookie,

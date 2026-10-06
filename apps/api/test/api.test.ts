@@ -1,5 +1,6 @@
 import {
   CSRF_HEADER,
+  eventSigningPayload,
   leadingZeroBits,
   powMessage,
   toEventCell,
@@ -9,7 +10,7 @@ import {
 } from '@safeway/shared';
 import type { FastifyInstance } from 'fastify';
 import { gridDisk } from 'h3-js';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createPublicKey, randomUUID, verify, type KeyObject } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import { createDb, type Sql } from '../src/db.js';
@@ -140,6 +141,7 @@ describe('signalements', () => {
       'inv',
       'lastConfAt',
       'rev',
+      'sig',
       'supportW',
       'type',
     ]);
@@ -427,6 +429,31 @@ describe('réputation', () => {
     await new ReputationService(sql, new RedisReputationLinks(redis)).decay();
     expect(await rep(high.id)).toBeCloseTo(1.99, 5);
     expect(await rep(almost.id)).toBe(1);
+  });
+});
+
+describe('signature des signalements (partage hors réseau)', () => {
+  async function publicKey() {
+    const { key } = (await app.inject({ method: 'GET', url: '/api/map/signing-key' })).json();
+    return createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: key }, format: 'jwk' });
+  }
+  const check = (key: KeyObject, event: PublicEvent) =>
+    verify(null, Buffer.from(eventSigningPayload(event)), key, Buffer.from(event.sig!, 'base64url'));
+
+  it('signe chaque signalement public, vérifiable avec la clé publique', async () => {
+    const user = await newUser();
+    const event = (await post('/api/events', user.cookie, { type: 'GAZ_FUMEE', cell: HERE, presenceCell: HERE })).json().event;
+    expect(check(await publicKey(), event)).toBe(true);
+    const listed = (await app.inject({ method: 'GET', url: `/api/map/zones/${zoneOf(HERE)}` })).json().events[0];
+    expect(check(await publicKey(), listed)).toBe(true);
+  });
+
+  it('rejette un signalement modifié (ex. fausse confirmation ou date prolongée)', async () => {
+    const user = await newUser();
+    const event = (await post('/api/events', user.cookie, { type: 'GAZ_FUMEE', cell: HERE, presenceCell: HERE })).json().event;
+    const key = await publicKey();
+    expect(check(key, { ...event, conf: 50 })).toBe(false);
+    expect(check(key, { ...event, expiresAt: event.expiresAt + 3600 })).toBe(false);
   });
 });
 
