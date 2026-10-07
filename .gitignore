@@ -51,3 +51,7 @@ apps/web/public/tiles/regions.json
 # Tests de charge : jetons de session des comptes de test, résultats
 tests/load/fixtures.json
 tests/load/results/
+
+# Déploiement : état local du serveur et clé publique de sauvegarde
+.deploy/
+.backup-recipient
