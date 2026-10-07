@@ -1,13 +1,24 @@
-# Déploiement mono-serveur de référence (V0.1). La cible 500k (§47-60) nécessite une
+# Déploiement mono-serveur de référence. La cible 500k (§47-60) nécessite une
 # architecture multi-instances : voir docs/architecture.md.
 #
-#   docker compose --env-file .env.prod -f infrastructure/docker/docker-compose.prod.yml up -d --build
+# Ne pas lancer à la main : infrastructure/deploy/deploy.sh construit les images, sauvegarde,
+# migre, redémarre service par service et revient en arrière en cas d'échec (docs/deploiement.md).
+#
+# SAFEWAY_VERSION (commit déployé) étiquette les images : un retour arrière réutilise les
+# images précédentes sans reconstruction.
 name: safeway
+
+# Journaux : erreurs uniquement (les métriques couvrent le reste), rotation pour ne jamais
+# remplir le disque. Ni IP, ni URL complète, ni corps de requête (voir docs/privacy.md).
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
 
 services:
   postgres:
     image: postgis/postgis:17-3.5
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_DB: safeway
       POSTGRES_USER: safeway
@@ -24,12 +35,15 @@ services:
   redis:
     image: redis:8-alpine
     restart: unless-stopped
+    logging: *logging
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?}", "--save", "", "--appendonly", "no",
               "--maxmemory", "512mb", "--maxmemory-policy", "volatile-ttl"]
     networks: [backend]
 
   migrate:
+    image: safeway-api:${SAFEWAY_VERSION:-local}
     build: { context: ../.., dockerfile: infrastructure/docker/api.Dockerfile }
+    logging: *logging
     command: ["node", "dist/migrate-cli.js"]
     environment:
       DATABASE_URL: postgres://safeway:${POSTGRES_PASSWORD}@postgres:5432/safeway
@@ -39,8 +53,10 @@ services:
     restart: "no"
 
   api:
+    image: safeway-api:${SAFEWAY_VERSION:-local}
     build: { context: ../.., dockerfile: infrastructure/docker/api.Dockerfile }
     restart: unless-stopped
+    logging: *logging
     environment:
       PUBLIC_ORIGIN: https://${SAFEWAY_DOMAIN:?}
       WEBAUTHN_RP_ID: ${SAFEWAY_DOMAIN}
@@ -50,6 +66,7 @@ services:
       RATE_LIMIT_SECRET: ${RATE_LIMIT_SECRET:?}
       EVENT_SIGNING_KEY: ${EVENT_SIGNING_KEY:?}
       TRUST_PROXY_HOPS: 1
+      LOG_LEVEL: warn
       # Métriques internes (§64) : réseau backend uniquement, jamais publiées ni routées par Caddy.
       METRICS_PORT: 9100
       METRICS_HOST: 0.0.0.0
@@ -59,11 +76,14 @@ services:
     networks: [backend]
 
   gateway:
+    image: safeway-gateway:${SAFEWAY_VERSION:-local}
     build: { context: ../.., dockerfile: infrastructure/docker/gateway.Dockerfile }
     restart: unless-stopped
+    logging: *logging
     environment:
       PUBLIC_ORIGIN: https://${SAFEWAY_DOMAIN}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      LOG_LEVEL: warn
       METRICS_PORT: 9100
       METRICS_HOST: 0.0.0.0
     depends_on:
@@ -90,19 +110,24 @@ services:
     networks: [backend]
 
   routing:
+    image: safeway-routing:${SAFEWAY_VERSION:-local}
     build: { context: ../.., dockerfile: infrastructure/docker/routing.Dockerfile }
     restart: unless-stopped
+    logging: *logging
     environment:
       PUBLIC_ORIGIN: https://${SAFEWAY_DOMAIN}
       VALHALLA_URL: http://valhalla:8002
       MAP_API_URL: http://api:3000
       TRUST_PROXY_HOPS: 1
+      LOG_LEVEL: warn
     depends_on: [valhalla, api]
     networks: [backend]
 
   web:
+    image: safeway-web:${SAFEWAY_VERSION:-local}
     build: { context: ../.., dockerfile: infrastructure/docker/web.Dockerfile }
     restart: unless-stopped
+    logging: *logging
     environment:
       SAFEWAY_DOMAIN: ${SAFEWAY_DOMAIN}
     ports:
@@ -114,6 +139,7 @@ services:
       - ../../apps/web/public/fonts:/srv/map/fonts:ro
       - ../../apps/web/public/sprites:/srv/map/sprites:ro
       - caddy_data:/data
+      - caddy_config:/config
     depends_on: [api, gateway, routing]
     networks: [backend]
 
@@ -123,3 +149,4 @@ networks:
 volumes:
   pgdata:
   caddy_data:
+  caddy_config:
