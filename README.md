@@ -79,11 +79,17 @@ npm run typecheck && npm run lint && npm test
 
 Les tests d'API tournent sur une vraie base PostgreSQL/Redis (celle de `npm run dev:infra`).
 
+## Mise en ligne
+
+Un VPS Ubuntu, un domaine, Docker : voir [docs/deploiement.md](docs/deploiement.md) (installation du
+serveur, mises à jour avec retour arrière automatique, sauvegardes chiffrées).
+
 ## Feuille de route
 
-- **V0.1** (en cours) — compte pseudo + passkey, carte, Mode Manif, signalements, confirmations, expiration, couleur des rues
+- **V0.1** ✅ — compte pseudo + passkey, carte, Mode Manif, signalements, confirmations, expiration, couleur des rues
 - **V0.2** — temps réel (gateway WebSocket par zone H3) ✅, routage sécurisé ✅, alertes sur trajet ✅, réputation ✅
-- **V0.3** — anti-abus avancé, réseau dégradé, modération, tests de charge 500k
+- **V0.3** — anti-abus avancé ✅, réseau dégradé et partage hors réseau ✅, modération ✅, dégradation contrôlée ✅,
+  scripts de tests de charge ✅ (mesures sur l'infrastructure réelle à faire), déploiement ✅
 
 Aucune mention « supporte 500 000 utilisateurs » ne sera faite sans rapport de charge publié dans
 [docs/performance](docs/performance/).

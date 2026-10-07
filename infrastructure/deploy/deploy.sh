@@ -127,5 +127,6 @@ else
   echo "!! Échec de $target : retour automatique à $current" >&2
   git checkout --quiet --detach "$current"
   switch_to "$current" || die "retour arrière en échec : intervention manuelle nécessaire"
+  prune_images "$current" "$(cat "$STATE/previous" 2>/dev/null || true)"
   die "déploiement annulé, $current toujours en ligne"
 fi
