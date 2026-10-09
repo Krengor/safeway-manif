@@ -39,7 +39,9 @@ else
   # Un autre extrait serait fusionné au graphe : on ne garde que celui-ci, et l'ancien graphe
   # est effacé (Valhalla ignore sinon le nouvel extrait tant que des tuiles existent).
   find "$VALHALLA_DIR" -maxdepth 1 -name '*.osm.pbf' ! -name "$(basename "$pbf")" -delete
-  rm -rf "$VALHALLA_DIR"/valhalla_tiles "$VALHALLA_DIR"/valhalla_tiles.tar "$VALHALLA_DIR"/admins.sqlite "$VALHALLA_DIR"/file_hashes.txt
+  # Le graphe est écrit par le conteneur Valhalla (root) : on l'efface depuis un conteneur aussi.
+  docker run --rm -v "$ROOT/$VALHALLA_DIR:/data" node:22-alpine \
+    rm -rf /data/valhalla_tiles /data/valhalla_tiles.tar /data/admins.sqlite /data/file_hashes.txt
   echo "Nouvel extrait : Valhalla reconstruira son graphe au prochain démarrage (de quelques minutes à plus d'une heure)."
   echo "Pour l'appliquer à un service déjà lancé : docker compose ... restart valhalla"
 fi
