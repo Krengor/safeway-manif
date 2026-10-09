@@ -5,11 +5,13 @@
 #   - extrait OpenStreetMap pour l'itinéraire (Geofabrik), lu par Valhalla.
 #
 #   infrastructure/deploy/map-assets.sh                    # Besançon + Franche-Comté (zone de test)
+#   SAFEWAY_REGIONS=france infrastructure/deploy/map-assets.sh   # une carte par région (≈ 4,7 Go)
 #   SAFEWAY_BBOX="minLon,minLat,maxLon,maxLat" SAFEWAY_REGION_NAME="Lyon" \
 #   OSM_EXTRACT=europe/france/rhone-alpes infrastructure/deploy/map-assets.sh
 #
 # Le fond de carte d'une région est aussi ce que les téléphones téléchargent pour le hors ligne :
-# garder une zone de la taille d'une ville (quelques dizaines de Mo au plus).
+# zone unique de la taille d'une ville (quelques dizaines de Mo), ou découpage par région de France
+# (24 à 680 Mo chacune, zoom 14) ; l'app propose alors la région où se trouve le téléphone.
 # Après un changement d'extrait OSM, Valhalla reconstruit son graphe au démarrage (long).
 set -euo pipefail
 
@@ -20,7 +22,7 @@ VALHALLA_DIR=infrastructure/valhalla/custom_files
 
 echo "==> Fond de carte (${SAFEWAY_REGION_NAME:-Besançon})"
 docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
-  -e SAFEWAY_BBOX -e SAFEWAY_MAXZOOM -e SAFEWAY_REGION_NAME \
+  -e SAFEWAY_BBOX -e SAFEWAY_MAXZOOM -e SAFEWAY_REGION_NAME -e SAFEWAY_REGIONS -e SAFEWAY_REFRESH \
   -v "$ROOT:/app" -w /app node:22-alpine node apps/web/scripts/fetch-map-assets.mjs
 
 echo "==> Extrait OpenStreetMap pour l'itinéraire ($OSM_EXTRACT)"

@@ -9,30 +9,34 @@
  * (pas sur les rues consultées). Il peut être supprimé à tout moment.
  */
 import { FetchSource, type RangeResponse, type Source } from 'pmtiles';
+import type { MapRegion } from './regions';
 
 const CACHE_NAME = 'sw-offline-map-v1';
 const REGIONS_URL = '/tiles/regions.json';
 
-export interface OfflineRegion {
-  id: string;
-  name: string;
-  /** Chemin du fichier PMTiles de la région. */
-  url: string;
-  /** Taille du fichier (octets), pour l'afficher avant téléchargement. */
-  bytes: number;
-}
+export type OfflineRegion = MapRegion;
 
 const absolute = (path: string) => (path.startsWith('http') ? path : window.location.origin + path);
 const hasCacheApi = () => typeof caches !== 'undefined';
 
-export async function loadRegions(): Promise<OfflineRegion[]> {
-  try {
-    const res = await fetch(REGIONS_URL, { cache: 'no-cache' });
-    if (!res.ok) return [];
-    return (await res.json()) as OfflineRegion[];
-  } catch {
-    return [];
-  }
+let regionsRequest: Promise<OfflineRegion[]> | null = null;
+
+/** Liste des régions (une seule requête partagée par la carte et l'écran hors ligne). */
+export function loadRegions(): Promise<OfflineRegion[]> {
+  regionsRequest ??= (async () => {
+    try {
+      const res = await fetch(REGIONS_URL, { cache: 'no-cache' });
+      if (!res.ok) return [];
+      return (await res.json()) as OfflineRegion[];
+    } catch {
+      return [];
+    }
+  })().then((list) => {
+    // Échec (hors ligne au démarrage) : on réessaiera au prochain appel.
+    if (list.length === 0) regionsRequest = null;
+    return list;
+  });
+  return regionsRequest;
 }
 
 async function cachedBlob(url: string): Promise<Blob | null> {
@@ -47,28 +51,57 @@ async function cachedBlob(url: string): Promise<Blob | null> {
 }
 
 export async function isRegionDownloaded(region: OfflineRegion): Promise<boolean> {
-  return (await cachedBlob(region.url)) !== null;
+  if (!hasCacheApi()) return false;
+  try {
+    return (await (await caches.open(CACHE_NAME)).match(absolute(region.url))) !== undefined;
+  } catch {
+    return false;
+  }
 }
 
-/** Télécharge la région en entier ; `onProgress` reçoit une fraction entre 0 et 1. */
+/**
+ * Télécharge la région en entier ; `onProgress` reçoit une fraction entre 0 et 1.
+ *
+ * Le fichier (jusqu'à plusieurs centaines de Mo) est écrit au fil de l'eau dans le Cache
+ * Storage, sans être gardé en mémoire : un téléphone ne tiendrait pas un tel fichier en RAM.
+ */
 export async function downloadRegion(region: OfflineRegion, onProgress: (fraction: number) => void): Promise<void> {
   if (!hasCacheApi()) throw new Error('Stockage hors ligne indisponible sur ce navigateur.');
+  // Demande au navigateur de ne pas effacer la carte quand l'espace manque (sans effet si refusé).
+  await navigator.storage?.persist?.().catch(() => false);
+  const estimate = await navigator.storage?.estimate?.().catch(() => undefined);
+  if (estimate?.quota !== undefined && estimate.usage !== undefined && estimate.quota - estimate.usage < region.bytes) {
+    throw new Error('Espace insuffisant sur cet appareil pour cette carte.');
+  }
   const res = await fetch(absolute(region.url));
   if (!res.ok || !res.body) throw new Error('Téléchargement impossible.');
   const total = Number(res.headers.get('content-length')) || region.bytes;
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
   let received = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.byteLength;
-    onProgress(total ? Math.min(1, received / total) : 0);
-  }
-  const blob = new Blob(chunks as BlobPart[], { type: 'application/octet-stream' });
+  const counted = res.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        received += chunk.byteLength;
+        onProgress(total ? Math.min(1, received / total) : 0);
+        controller.enqueue(chunk);
+      },
+    }),
+  );
   const cache = await caches.open(CACHE_NAME);
-  await cache.put(absolute(region.url), new Response(blob, { headers: { 'content-length': String(blob.size) } }));
+  try {
+    await cache.put(
+      absolute(region.url),
+      new Response(counted, { headers: { 'content-length': String(total), 'content-type': 'application/octet-stream' } }),
+    );
+  } catch (err) {
+    await cache.delete(absolute(region.url)).catch(() => false);
+    throw err instanceof DOMException && err.name === 'QuotaExceededError'
+      ? new Error('Espace insuffisant sur cet appareil pour cette carte.')
+      : new Error('Téléchargement interrompu. Réessayez.');
+  }
+  if (received < total) {
+    await cache.delete(absolute(region.url));
+    throw new Error('Téléchargement interrompu. Réessayez.');
+  }
   tileSources.get(absolute(region.url))?.invalidate();
 }
 

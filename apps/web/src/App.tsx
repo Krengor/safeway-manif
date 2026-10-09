@@ -2,6 +2,7 @@ import { degradationPolicy, isNear, toEventCell, type EventType, type PublicEven
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CellSheet } from './components/CellSheet';
 import { Legend } from './components/Legend';
+import { OfflineMapSuggestion } from './components/OfflineMapSuggestion';
 import { ReportSheet } from './components/ReportSheet';
 import { RoutePanel } from './components/RoutePanel';
 import { api, ApiRequestError } from './lib/api';
@@ -352,6 +353,7 @@ export function App() {
             </button>
           </div>
         )}
+        <OfflineMapSuggestion position={manif.position} disabled={!policy.secondary} />
         {outbox.pending > 0 && (
           <p role="status" className="pointer-events-auto rounded-xl bg-panel/95 px-3 py-2 text-sm font-semibold shadow">
             📤 {outbox.pending} envoi{outbox.pending > 1 ? 's' : ''} en attente du réseau
@@ -507,6 +509,7 @@ export function App() {
           {screen === 'privacy' && (
             <PrivacyScreen
               secondary={policy.secondary}
+              position={manif.position}
               onClose={() => setScreen('map')}
               onShowTutorial={() => {
                 setScreen('map');

@@ -9,7 +9,16 @@ import { layers, namedFlavor } from '@protomaps/basemaps';
 import type { StyleSpecification } from '@maplibre/maplibre-gl-style-spec';
 
 export const BASEMAP_SOURCE = 'protomaps';
+/** Fichier unique historique, utilisé quand le serveur ne publie pas de régions. */
 export const TILES_URL: string = import.meta.env.VITE_PMTILES_URL ?? '/tiles/basemap.pmtiles';
+
+/** Tuiles lues région par région (voir regionalTiles.ts). */
+export const REGIONAL_PROTOCOL = 'swmap';
+/**
+ * Zoom maximal des données (celui des fichiers PMTiles, cf. fetch-map-assets) : au-delà, MapLibre
+ * agrandit les tuiles de ce niveau, qui gardent toutes les rues et leurs noms.
+ */
+export const MAP_MAX_ZOOM = 14;
 
 /**
  * Position initiale tant que le GPS est inactif (point fixe, jamais la position de l'utilisateur).
@@ -37,7 +46,9 @@ export function buildStyle(dark: boolean): StyleSpecification {
     sources: {
       [BASEMAP_SOURCE]: {
         type: 'vector',
-        url: `pmtiles://${absolute(TILES_URL)}`,
+        tiles: [`${REGIONAL_PROTOCOL}://{z}/{x}/{y}`],
+        minzoom: 0,
+        maxzoom: MAP_MAX_ZOOM,
         attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://protomaps.com">Protomaps</a>',
       },
     },

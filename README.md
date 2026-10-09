@@ -24,6 +24,7 @@ Aucun itinéraire n'est garanti « sûr ».
 | Compte | Pseudo + clé **publique** de passkey. Pas d'e-mail, de téléphone ni de mot de passe. |
 | Adresses IP | Jamais journalisées ; pseudonymisées par HMAC pour le rate limiting, TTL de quelques minutes. |
 | Tuiles cartographiques | Auto-hébergées (PMTiles) : aucun fournisseur tiers ne voit la zone consultée. |
+| Carte hors ligne | La région proposée est trouvée **sur l'appareil** à partir de la position en mémoire ([`regions.ts`](apps/web/src/lib/regions.ts)) ; seul le téléchargement volontaire d'une région entière atteint le serveur. Rien n'est mémorisé. |
 | Itinéraire | Départ/arrivée envoyés à un service dédié **sans cookie** ni identité, jamais journalisés ni conservés. Le suivi des alertes sur le trajet se fait sur l'appareil. |
 | Cache hors ligne | Seule la coquille de l'app est mise en cache ; jamais les zones consultées. |
 

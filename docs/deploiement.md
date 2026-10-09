@@ -51,6 +51,7 @@ cd /opt/safeway
 infrastructure/deploy/gen-secrets.sh safeway-manif.fr        # crée .env.prod (600)
 echo "age1…ta-clé-publique…" > .backup-recipient             # clé PUBLIQUE de l'étape 0
 infrastructure/deploy/map-assets.sh                           # Besançon + Franche-Comté
+SAFEWAY_REGIONS=france infrastructure/deploy/map-assets.sh    # ou : une carte par région (≈ 4,7 Go, long)
 ```
 
 Copier le contenu de `.env.prod` dans ton gestionnaire de mots de passe (`cat .env.prod`). À ne

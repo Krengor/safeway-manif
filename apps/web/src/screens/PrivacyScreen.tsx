@@ -1,4 +1,5 @@
 import { OfflineMapPanel } from '../components/OfflineMapPanel';
+import type { LocalPosition } from '../lib/useManifMode';
 
 /** Accès au code source exigé par l'AGPL-3.0 (§13) pour les utilisateurs réseau. */
 const SOURCE_URL = 'https://github.com/Krengor/safeway-manif';
@@ -6,12 +7,14 @@ const SOURCE_URL = 'https://github.com/Krengor/safeway-manif';
 interface Props {
   /** Fonctions secondaires disponibles (dégradation contrôlée, §56). */
   secondary: boolean;
+  /** Position en mémoire (Mode Manif) : met la région de l'utilisateur en tête, sans rien envoyer. */
+  position: LocalPosition | null;
   onClose(): void;
   onShowTutorial(): void;
 }
 
 /** Écran « Confidentialité » (§37) : ce que l'app fait, ne fait pas, et ses limites. */
-export function PrivacyScreen({ secondary, onClose, onShowTutorial }: Props) {
+export function PrivacyScreen({ secondary, position, onClose, onShowTutorial }: Props) {
   return (
     <main className="safe-top safe-bottom mx-auto flex min-h-full max-w-md flex-col gap-5 px-4">
       <button type="button" onClick={onClose} className="self-start py-2 font-semibold text-muted">
@@ -30,7 +33,7 @@ export function PrivacyScreen({ secondary, onClose, onShowTutorial }: Props) {
           Le réseau mobile sature souvent en manifestation : téléchargez la carte avant de partir pour l'avoir même
           sans réseau. Elle reste sur votre appareil.
         </p>
-        <OfflineMapPanel disabled={!secondary} />
+        <OfflineMapPanel disabled={!secondary} position={position} />
       </section>
 
       <h1 className="text-2xl font-bold">Confidentialité</h1>
