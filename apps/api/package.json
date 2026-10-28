@@ -17,7 +17,7 @@
     "@fastify/helmet": "^13.0.2",
     "@safeway/shared": "0.1.0",
     "@simplewebauthn/server": "^13.2.2",
-    "fastify": "^5.6.1",
+    "fastify": "^5.12.6",
     "h3-js": "^4.3.0",
     "ioredis": "^5.8.1",
     "postgres": "^3.4.7",
